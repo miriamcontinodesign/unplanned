@@ -1,5 +1,11 @@
 import { activityProvider, type Activity } from '../providers/index.js'
-import { currentStay, decidedProductCodes, listOpenPlans, listPreferences } from '../db/repo.js'
+import {
+  currentStay,
+  decidedProductCodes,
+  listBookings,
+  listOpenPlans,
+  listPreferences,
+} from '../db/repo.js'
 
 export interface Recommendation extends Activity {
   /** Why this was surfaced, grounded in what we actually know about the traveler. */
@@ -37,6 +43,9 @@ export async function recommendationsFor(userId: string, limit = 8): Promise<Rec
 
   // Anything already accepted or passed on must not come back.
   const decided = decidedProductCodes(userId)
+  for (const booking of listBookings(userId)) {
+    if (booking.status === 'confirmed') decided.add(booking.productCode)
+  }
   const fresh = activities.filter((activity) => !decided.has(activity.productCode))
 
   const days = Math.max(stay.nights ?? 3, 1)

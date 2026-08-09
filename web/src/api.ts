@@ -1,4 +1,4 @@
-import type { Recommendation, Snapshot } from './types'
+import type { Booking, CancelledBooking, Recommendation, Snapshot } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -31,6 +31,20 @@ export const api = {
     request<Snapshot>('/api/itinerary/accept', {
       method: 'POST',
       body: JSON.stringify({ productCode, dayIndex }),
+    }),
+
+  book: (productCode: string) =>
+    request<Snapshot & { booking: Booking; checkoutRequired?: boolean }>('/api/bookings/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ productCode }),
+    }),
+
+  confirmedBookings: () =>
+    request<{ bookings: Booking[] }>('/api/bookings/confirmed'),
+
+  cancelBooking: (id: string) =>
+    request<Snapshot & { booking: CancelledBooking }>(`/api/bookings/${id}/cancel`, {
+      method: 'POST',
     }),
 
   pass: (productCode: string) =>

@@ -9,15 +9,18 @@ import { describeError, logger } from '../util/log.js'
 import type { KeyedMutex } from '../util/mutex.js'
 import {
   addPlan,
+  createBooking,
   createLinkCode,
   createSession,
   createUser,
   currentStay,
   getUserBySession,
+  listBookings,
   listOpenPlans,
   listPreferences,
   recentMessages,
   setPlanStatus,
+  updateBooking,
   type User,
 } from '../db/repo.js'
 import { greeting, handleTurn, phaseFor, placeLabel } from '../onboarding/engine.js'
@@ -156,6 +159,144 @@ export function createServer(mutex: KeyedMutex) {
     if (!Number.isFinite(id)) return c.json({ error: 'Bad itinerary id.' }, 400)
     setPlanStatus(user.id, id, 'dropped')
     return c.json(snapshot(user))
+  })
+
+  // --- booking --------------------------------------------------------------
+  // Intentionally a domain action, not generic CRUD: callers ask Roadio to
+  // book a known product, and only confirmed bookings are exposed to the UI.
+
+  app.get('/api/bookings/confirmed', (c) => {
+    const confirmed = listBookings(c.get('user').id).filter((booking) => booking.status === 'confirmed')
+    return c.json({ bookings: confirmed })
+  })
+
+  app.post('/api/bookings/confirm', async (c) => {
+    const user = c.get('user')
+    const body: {
+      productCode?: string
+      dayIndex?: number
+      travelDate?: string
+    } = await c.req.json().catch(() => ({}))
+    if (!body.productCode) return c.json({ error: 'productCode is required.' }, 400)
+
+    const existing = listBookings(user.id).find(
+      (booking) => booking.productCode === body.productCode && booking.status === 'confirmed',
+    )
+    if (existing) return c.json({ booking: existing, ...snapshot(user) })
+
+    const provider = activityProvider()
+    const activity = await provider.get(body.productCode)
+    if (!activity) return c.json({ error: 'That activity is no longer listed.' }, 404)
+
+    const travelDate = /^\d{4}-\d{2}-\d{2}$/.test(body.travelDate ?? '')
+      ? body.travelDate!
+      : new Date().toISOString().slice(0, 10)
+    const stay = currentStay(user.id)
+    const partySize = Math.max(stay?.partySize ?? 1, 1)
+
+    if (provider.bookingMode === 'deeplink') {
+      const bookingUrl = provider.deeplink?.(activity.productCode) ?? activity.productUrl
+      const booking = createBooking({
+        userId: user.id,
+        provider: provider.name,
+        productCode: activity.productCode,
+        productTitle: activity.title,
+        optionCode: null,
+        optionTitle: null,
+        travelDate,
+        startTime: null,
+        partySize,
+        currency: activity.fromPrice.currency,
+        totalAmount: activity.fromPrice.amount * partySize,
+        status: 'deeplinked',
+        holdRef: null,
+        bookingRef: null,
+        bookingUrl,
+        cancellationPolicy: null,
+        holdExpiresAt: null,
+      })
+      return c.json({ booking, checkoutRequired: true, ...snapshot(user) })
+    }
+
+    if (!provider.hold || !provider.book) {
+      return c.json({ error: 'This provider cannot confirm bookings right now.' }, 409)
+    }
+
+    const options = await provider.availability(activity.productCode, travelDate, partySize)
+    const option = options.find((candidate) => candidate.available)
+    if (!option) return c.json({ error: 'No departures are available for that date.' }, 409)
+
+    const hold = await provider.hold({
+      productCode: activity.productCode,
+      optionCode: option.optionCode,
+      travelDate,
+      partySize,
+    })
+    const pending = createBooking({
+      userId: user.id,
+      provider: provider.name,
+      productCode: activity.productCode,
+      productTitle: activity.title,
+      optionCode: option.optionCode,
+      optionTitle: option.title,
+      travelDate,
+      startTime: option.startTime,
+      partySize,
+      currency: hold.total.currency,
+      totalAmount: hold.total.amount,
+      status: 'held',
+      holdRef: hold.holdRef,
+      bookingRef: null,
+      bookingUrl: null,
+      cancellationPolicy: hold.cancellationPolicy,
+      holdExpiresAt: hold.expiresAt,
+    })
+
+    try {
+      const result = await provider.book({
+        holdRef: hold.holdRef,
+        productCode: activity.productCode,
+        optionCode: option.optionCode,
+        travelDate,
+        partySize,
+        traveler: {
+          firstName: user.displayName?.split(/\s+/)[0] || 'Roadio',
+          lastName: user.displayName?.split(/\s+/).slice(1).join(' ') || 'Traveler',
+          // The fixture provider does not contact this address. A real provider
+          // must collect and validate traveler details before this step.
+          email: 'booking-demo@roadio.local',
+        },
+      })
+      const booking = updateBooking(pending.id, {
+        status: result.status === 'confirmed' ? 'confirmed' : 'held',
+        bookingRef: result.bookingRef,
+      })!
+
+      return c.json({ booking, ...snapshot(user) })
+    } catch (error) {
+      updateBooking(pending.id, { status: 'failed' })
+      throw error
+    }
+  })
+
+  app.post('/api/bookings/:id/cancel', (c) => {
+    const user = c.get('user')
+    const booking = listBookings(user.id).find((candidate) => candidate.id === c.req.param('id'))
+    if (!booking) return c.json({ error: 'Booking not found.' }, 404)
+    if (booking.status !== 'confirmed') {
+      return c.json({ error: 'Only confirmed bookings can be cancelled here.' }, 409)
+    }
+
+    const provider = activityProvider()
+    // The fixture provider has no external system to notify. A real supplier
+    // must implement an explicit cancellation operation before this route is
+    // allowed to change its booking locally.
+    if (!provider.isSample || booking.provider !== provider.name) {
+      return c.json({ error: 'This booking must be cancelled with the provider.' }, 409)
+    }
+
+    const cancelled = updateBooking(booking.id, { status: 'cancelled' })!
+    return c.json({ booking: cancelled, ...snapshot(user) })
   })
 
   // --- telegram link ---------------------------------------------------------
