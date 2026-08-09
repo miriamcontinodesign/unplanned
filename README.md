@@ -1,5 +1,9 @@
 # Roadio
 
+> The web app is in progress. The Telegram concierge below works and is tested;
+> the data layer for the web app is in and tested, but the HTTP API and frontend
+> are not started. See [STATUS.md](./STATUS.md).
+
 A travel concierge that lives in a Telegram thread.
 It learns where you are from what you tell it, remembers the shape of your trip, and speaks up unprompted when there's something worth doing.
 
@@ -58,12 +62,12 @@ Needs Node 20+.
 
 ```bash
 npm install
-cp .env.example .env      # then fill in the two values below
+cp .env.example .env      # both values are optional - see below
 npm run db:generate       # only needed if you change src/db/schema.ts
 npm run dev
 ```
 
-**`TELEGRAM_BOT_TOKEN`** - message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts, paste the token it gives you.
+**`TELEGRAM_BOT_TOKEN`** - message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts, paste the token it gives you. Optional: without it the bot and the proactive engine stay down.
 
 **`ANTHROPIC_API_KEY`** - from [console.anthropic.com](https://console.anthropic.com/settings/keys). If you've run `ant auth login` you can leave this blank; the SDK picks up the profile.
 
@@ -92,11 +96,11 @@ Send a photo and it gets captioned and filed in the journal.
 ## Testing
 
 ```bash
-npm run smoke       # ~40 checks, no API keys needed
+npm run smoke       # 82 checks, no API keys needed
 npm run typecheck
 ```
 
-`npm run smoke` runs against a throwaway database and hits the real Open-Meteo API. It covers migrations, the state write path, geocoding, weather, the proactive gates, per-traveler serialisation, and the conversation window. It needs a network connection but no credentials.
+`npm run smoke` runs against a throwaway database and hits the real Open-Meteo API. It covers migrations, the trip-state write path, web sessions, Telegram account linking and its user merge, the sample activity catalogue and full booking path, geocoding, weather, the proactive gates, per-traveler serialisation, and the conversation window. It needs a network connection but no credentials.
 
 It deliberately does **not** cover the model calls. Those need an API key, and asserting on model output is a different kind of test - see below.
 

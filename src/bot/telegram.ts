@@ -9,7 +9,7 @@ import {
   addJournalEntry,
   addMessage,
   currentStay,
-  getOrCreateUser,
+  getOrCreateUserByTelegram,
   listOpenPlans,
   listPreferences,
   updateUser,
@@ -26,8 +26,8 @@ const log = logger('telegram')
 /** Telegram rejects anything over 4096 characters. */
 const MAX_MESSAGE = 4000
 
-export function createBot(mutex: KeyedMutex) {
-  const bot = new Bot(config.telegramBotToken)
+export function createBot(botToken: string, mutex: KeyedMutex) {
+  const bot = new Bot(botToken)
 
   const send = async (chatId: string, text: string): Promise<void> => {
     for (const chunk of chunkText(text)) {
@@ -143,7 +143,7 @@ export function createBot(mutex: KeyedMutex) {
         const file = await ctx.getFile()
         if (!file.file_path) throw new Error('Telegram returned no file path')
 
-        const url = `https://api.telegram.org/file/bot${config.telegramBotToken}/${file.file_path}`
+        const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`
         const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
         if (!response.ok) throw new Error(`download failed with HTTP ${response.status}`)
 
@@ -226,7 +226,7 @@ export function createBot(mutex: KeyedMutex) {
 function ensureUser(ctx: Context) {
   const chatId = String(ctx.chat?.id ?? ctx.from?.id)
   const name = ctx.from?.first_name ?? null
-  return getOrCreateUser(chatId, name)
+  return getOrCreateUserByTelegram(chatId, name)
 }
 
 /**

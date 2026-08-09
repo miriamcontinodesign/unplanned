@@ -1,14 +1,8 @@
 import 'dotenv/config'
 import path from 'node:path'
 
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim()
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable ${name}. Copy .env.example to .env and fill it in.`,
-    )
-  }
-  return value
+function optionalEnv(name: string): string | null {
+  return process.env[name]?.trim() || null
 }
 
 function intEnv(name: string, fallback: number): number {
@@ -30,7 +24,12 @@ function booleanEnv(name: string, fallback = false): boolean {
 }
 
 export const config = {
-  telegramBotToken: requireEnv('TELEGRAM_BOT_TOKEN'),
+  /**
+   * Optional: without it the Telegram bot and the proactive engine simply don't
+   * start, and the web app runs on its own. That keeps the web half runnable
+   * (and testable) with no credentials at all.
+   */
+  telegramBotToken: optionalEnv('TELEGRAM_BOT_TOKEN'),
 
   // The Anthropic SDK resolves credentials itself (ANTHROPIC_API_KEY, then
   // ANTHROPIC_AUTH_TOKEN, then an `ant auth login` profile), so we deliberately
@@ -46,6 +45,10 @@ export const config = {
   viatorMock: booleanEnv('ROADIO_VIATOR_MOCK'),
 
   tickMinutes: intEnv('ROADIO_TICK_MINUTES', 15),
+
+  httpPort: intEnv('ROADIO_HTTP_PORT', 8787),
+  /** Built SPA, served by the same process in production. */
+  webDir: path.resolve(process.env.ROADIO_WEB_DIR?.trim() || './web/dist'),
 } as const
 
 /**
