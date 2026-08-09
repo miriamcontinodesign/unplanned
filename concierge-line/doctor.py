@@ -17,9 +17,9 @@ import re
 import sys
 
 import httpx
-from dotenv import load_dotenv
 
-load_dotenv()
+# Importing config is what loads .env, from a path anchored to this folder.
+import config
 
 LOCAL = "http://127.0.0.1:8000"
 
@@ -39,6 +39,19 @@ def env(name: str) -> str:
 
 async def main() -> int:
     print("\n--- concierge-line preflight ---\n")
+
+    # 0. Where the values came from ---------------------------------------
+    # Reported before the key list, because "no file" and "file full of blanks"
+    # are indistinguishable once the values reach os.environ, and mistaking one
+    # for the other sends you debugging the loader instead of the file.
+    source = config.describe()
+    if source.found:
+        record(_PASS, "env file",
+               f"loaded {source.path} ({source.set_keys} of {source.keys} keys set)")
+    else:
+        record(_FAIL, "env file",
+               f"no file at {source.path} — nothing was loaded, so every value below "
+               f"reads as missing. Run: Copy-Item .env.example .env  (in that folder)")
 
     # 1. Environment ------------------------------------------------------
     required = [

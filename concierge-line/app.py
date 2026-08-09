@@ -16,12 +16,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
-load_dotenv()
+# Importing config is what loads .env, from a path anchored to that file's
+# folder. It has to happen before the modules below, which read os.environ.
+import config  # noqa: F401
 
 import agents
 import providers
