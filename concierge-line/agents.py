@@ -20,6 +20,11 @@ from typing import Any
 
 import httpx
 
+# Load .env here rather than relying on the entry point to have done it. This
+# module reads os.environ at call time, so anything that imports it directly -
+# a script, a test, a REPL - would otherwise silently see no configuration and
+# fall back to defaults like "the traveler", which the agent then says aloud.
+import config  # noqa: F401
 import store
 
 OUTBOUND_CALL_URL = "https://api.elevenlabs.io/v1/convai/twilio/outbound-call"
@@ -106,14 +111,37 @@ def build_dynamic_variables(task: dict[str, Any]) -> dict[str, str]:
     if not brief:
         brief = "Nothing on file. Ask about anything you need."
 
+    who = (task.get("traveler") or {}).get("name") or traveler_name()
+    when = pretty_date(request.get("date"))
+    at_time = pretty_time(request.get("time"))
+    party = str(request.get("party_size") or 2)
+    kind = (venue.get("kind") or "restaurant").strip().lower()
+    what = {
+        "tour": f"{party} places",
+        "bar": f"a table for {party}",
+    }.get(kind, f"a table for {party}")
+
+    # One self-contained sentence describing the booking. Agent prompts tend to
+    # have a single "what you are booking" slot rather than separate date/time
+    # fields, so this has to stand alone - a prompt referencing only this still
+    # gets everything it needs.
+    request_summary = (
+        f"Book {what} at {venue.get('name') or 'the venue'} "
+        f"on {when} at {at_time}, under the name {who}."
+    )
+    if notes := ((task.get("traveler") or {}).get("notes") or "").strip():
+        request_summary += f" Worth mentioning: {notes}."
+
     return {
         "task_id": str(task.get("id", "")),
         "app_name": app_name(),
-        "traveler_name": (task.get("traveler") or {}).get("name") or traveler_name(),
+        "traveler_name": who,
         "venue_name": venue.get("name") or "the venue",
-        "date_pretty": pretty_date(request.get("date")),
-        "time_pretty": pretty_time(request.get("time")),
-        "party_size": str(request.get("party_size") or 2),
+        "venue_kind": kind,
+        "date_pretty": when,
+        "time_pretty": at_time,
+        "party_size": party,
+        "request_summary": request_summary,
         "asks_list": asks_list,
         "policy_brief": brief,
     }

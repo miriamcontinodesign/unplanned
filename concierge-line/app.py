@@ -240,7 +240,12 @@ async def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             "party_size": int(request_block.get("party_size") or 2),
             "asks": request_block.get("asks") or default_asks(kind),
         },
-        "traveler": payload.get("traveler") or {"name": agents.traveler_name(), "notes": ""},
+        "traveler": {
+            # A blank name reaches the agent as "under the name the traveler",
+            # which is what it then says out loud to the venue.
+            "name": ((payload.get("traveler") or {}).get("name") or "").strip() or agents.traveler_name(),
+            "notes": ((payload.get("traveler") or {}).get("notes") or "").strip(),
+        },
         "briefing": {"policy_brief": "", "sources": []},
         "conversation_id": None,
         "result": None,

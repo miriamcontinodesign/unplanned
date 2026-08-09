@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+import config  # noqa: F401  - same reason as agents.py: don't depend on the entry point
 from store import TTLCache
 
 STAY22_URL = "https://api.stay22.com/v2/accommodations"
