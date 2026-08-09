@@ -1,6 +1,5 @@
-import type Anthropic from '@anthropic-ai/sdk'
 import type { AgentTool } from '../llm/agent.js'
-import { currentStay, type Stay } from '../db/repo.js'
+import { currentStay } from '../db/repo.js'
 import { geocode } from '../services/geocode.js'
 import { formatForecast, getForecast } from '../services/weather.js'
 import { describeStay } from '../llm/state.js'
@@ -13,23 +12,26 @@ import { describeStay } from '../llm/state.js'
 export function weatherTool(userId: string): AgentTool {
   return {
     definition: {
-      name: 'get_weather',
-      description:
-        'Get the current conditions and multi-day forecast for a place. Omit `place` to get the forecast where the traveler currently is. Use this before recommending anything outdoors or time-of-day sensitive.',
-      input_schema: {
-        type: 'object',
-        properties: {
-          place: {
-            type: 'string',
-            description:
-              'City or place name to look up. Omit to use the traveler’s current location.',
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description:
+          'Get the current conditions and multi-day forecast for a place. Omit `place` to get the forecast where the traveler currently is. Use this before recommending anything outdoors or time-of-day sensitive.',
+        parameters: {
+          type: 'object',
+          properties: {
+            place: {
+              type: 'string',
+              description:
+                'City or place name to look up. Omit to use the traveler’s current location.',
+            },
+            days: {
+              type: 'integer',
+              description: 'How many days of forecast to return, 1 to 7. Defaults to 3.',
+            },
           },
-          days: {
-            type: 'integer',
-            description: 'How many days of forecast to return, 1 to 7. Defaults to 3.',
-          },
+          required: [],
         },
-        required: [],
       },
     },
     async run(input) {
@@ -63,32 +65,14 @@ export function weatherTool(userId: string): AgentTool {
   }
 }
 
-/**
- * Anthropic-hosted web search. Passing the traveler's location biases results
- * toward what is actually near them, which is most of the value here.
+/*
+ * Web search was an Anthropic-hosted, model-invoked tool (`web_search_20260209`)
+ * and was dropped in the move to OpenRouter, which has no equivalent: its web
+ * plugin augments every request instead of being something the agent chooses to
+ * call. Recommendations now rest on model knowledge plus the experience and
+ * weather tools. The removed implementation is in git history if it is wanted
+ * back behind a provider seam.
  */
-export function webSearchTool(stay: Stay | undefined): AgentTool {
-  const definition: Anthropic.Messages.ToolUnion = {
-    type: 'web_search_20260209',
-    name: 'web_search',
-    max_uses: 6,
-  }
-
-  if (stay?.city) {
-    // `country` must be ISO 3166-1 alpha-2. We only ever set it from the
-    // geocoder's country_code, never from the free-text country name, so an
-    // ungeocoded stay simply omits it rather than sending something invalid.
-    ;(definition as Anthropic.Messages.WebSearchTool20260209).user_location = {
-      type: 'approximate',
-      city: stay.city,
-      ...(stay.region ? { region: stay.region } : {}),
-      ...(stay.countryCode ? { country: stay.countryCode } : {}),
-      ...(stay.timezone ? { timezone: stay.timezone } : {}),
-    }
-  }
-
-  return { definition }
-}
 
 export interface NudgeSink {
   value: { topic: string; message: string } | null
@@ -101,24 +85,27 @@ export interface NudgeSink {
 export function sendNudgeTool(sink: NudgeSink): AgentTool {
   return {
     definition: {
-      name: 'send_nudge',
-      description:
-        'Send an unprompted message to the traveler. Call this at most once, and only when the suggestion clears the bar described in your instructions. If nothing is worth sending, do not call this tool at all - just end your turn.',
-      input_schema: {
-        type: 'object',
-        properties: {
-          topic: {
-            type: 'string',
-            description:
-              'Short kebab-case label for what this suggestion is about, e.g. "sunset-walk" or "rain-backup-plan". Used to avoid repeating yourself later.',
+      type: 'function',
+      function: {
+        name: 'send_nudge',
+        description:
+          'Send an unprompted message to the traveler. Call this at most once, and only when the suggestion clears the bar described in your instructions. If nothing is worth sending, do not call this tool at all - just end your turn.',
+        parameters: {
+          type: 'object',
+          properties: {
+            topic: {
+              type: 'string',
+              description:
+                'Short kebab-case label for what this suggestion is about, e.g. "sunset-walk" or "rain-backup-plan". Used to avoid repeating yourself later.',
+            },
+            message: {
+              type: 'string',
+              description:
+                'The message to send, as one short text. Two to three sentences. No greeting.',
+            },
           },
-          message: {
-            type: 'string',
-            description:
-              'The message to send, as one short text. Two to three sentences. No greeting.',
-          },
+          required: ['topic', 'message'],
         },
-        required: ['topic', 'message'],
       },
     },
     async run(input) {

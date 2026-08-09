@@ -1,5 +1,5 @@
-import { anthropic } from './client.js'
-import { config, effort } from '../config.js'
+import { llm, throwOnRouterError } from './client.js'
+import { config, effort, reasoningParams } from '../config.js'
 import { CAPTION_SYSTEM } from './prompts.js'
 import { collectText } from './agent.js'
 import { describeError, logger } from '../util/log.js'
@@ -23,21 +23,21 @@ export async function captionPhoto(
   context: string,
 ): Promise<string | null> {
   try {
-    const response = await anthropic.messages.create({
+    const response = await llm().chat.completions.create({
       model: config.model,
       max_tokens: 1000,
-      system: CAPTION_SYSTEM,
-      output_config: { effort: effort.caption },
+      ...reasoningParams(effort.caption),
       messages: [
+        { role: 'system', content: CAPTION_SYSTEM },
         {
           role: 'user',
           content: [
             {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaTypeFor(filePath),
-                data: bytes.toString('base64'),
+              // OpenAI-shaped vision input takes a data URL rather than a
+              // separate media type and payload.
+              type: 'image_url',
+              image_url: {
+                url: `data:${mediaTypeFor(filePath)};base64,${bytes.toString('base64')}`,
               },
             },
             { type: 'text', text: `Context: ${context}` },
@@ -45,8 +45,9 @@ export async function captionPhoto(
         },
       ],
     })
+    throwOnRouterError(response)
 
-    if (response.stop_reason === 'refusal') return null
+    if (response.choices[0]?.message.refusal) return null
     return collectText(response) || null
   } catch (error) {
     log.warn('captioning failed', describeError(error))

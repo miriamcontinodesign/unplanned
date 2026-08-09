@@ -1,5 +1,5 @@
 /**
- * Smoke test for everything that doesn't need Anthropic credentials: migrations,
+ * Smoke test for everything that doesn't need model credentials: migrations,
  * the trip-state write path, web sessions, Telegram account linking and its user
  * merge, the sample activity catalogue and its booking path, live geocoding and
  * weather, the proactive gates, and per-traveler serialisation.
@@ -30,7 +30,7 @@ const { experienceSearchTool } = await import('../src/components/index.js')
 const { searchMockExperiences } = await import('../src/components/viator.mock.js')
 const { activityProvider } = await import('../src/providers/index.js')
 const { recommendationsFor } = await import('../src/onboarding/recommend.js')
-const { weatherTool, webSearchTool } = await import('../src/tools/index.js')
+const { weatherTool } = await import('../src/tools/index.js')
 const { formatExperienceResults, viatorSessionId } = await import('../src/services/viator.js')
 const { isQuietHour } = await import('../src/util/time.js')
 const { KeyedMutex } = await import('../src/util/mutex.js')
@@ -322,17 +322,22 @@ async function main(): Promise<void> {
     /Could not find/.test(await weather.run!({ place: 'Zzzqqxnotaplace' })),
   )
 
-  const search = webSearchTool(repo.currentStay(userId)) as {
-    definition: { user_location?: { country?: string; timezone?: string } }
+  // Every tool must present the OpenAI function shape, or OpenRouter rejects the
+  // whole request rather than just ignoring the odd one out.
+  for (const tool of [weather, experienceSearchTool(userId)]) {
+    check(
+      `${tool.definition.function.name} uses the OpenAI function shape`,
+      tool.definition.type === 'function' &&
+        typeof tool.definition.function.name === 'string' &&
+        typeof tool.definition.function.parameters === 'object',
+    )
   }
-  check('search country is ISO alpha-2', search.definition.user_location?.country === 'PE')
-  check('search timezone is IANA', search.definition.user_location?.timezone === 'America/Lima')
 
   const experiences = experienceSearchTool(userId)
   check(
     'experience search exposes required date fields',
-    (experiences.definition as { input_schema: { required: string[] } }).input_schema.required
-      .join(',') === 'searchTerm,startDate,endDate',
+    (experiences.definition.function.parameters as { required: string[] }).required.join(',') ===
+      'searchTerm,startDate,endDate',
   )
   check('Viator session id is stable', viatorSessionId(userId) === viatorSessionId(userId))
   check('Viator session id hides user id', !viatorSessionId(userId).includes(userId))

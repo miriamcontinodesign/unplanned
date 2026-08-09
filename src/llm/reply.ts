@@ -1,21 +1,21 @@
-import type Anthropic from '@anthropic-ai/sdk'
+import type OpenAI from 'openai'
 import { runAgent } from './agent.js'
 import { CONCIERGE_SYSTEM } from './prompts.js'
 import { renderTravelerState } from './state.js'
 import { effort } from '../config.js'
-import { currentStay, recentMessages } from '../db/repo.js'
+import { recentMessages } from '../db/repo.js'
 import { experienceSearchTool } from '../components/index.js'
-import { weatherTool, webSearchTool } from '../tools/index.js'
+import { weatherTool } from '../tools/index.js'
 
 /**
- * Build the system blocks with the cache breakpoint on the static instructions.
- * Everything volatile (state, local time) goes after it, so the stable prefix
- * stays cacheable across turns and across travelers.
+ * Static instructions first, volatile traveler state second. OpenRouter has no
+ * explicit cache breakpoint the way Anthropic did, but several of its providers
+ * cache prefixes automatically, so keeping the stable text first still pays.
  */
-export function conciergeSystem(userId: string): Anthropic.TextBlockParam[] {
+export function conciergeSystem(userId: string): string[] {
   return [
-    { type: 'text', text: CONCIERGE_SYSTEM, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: `# What you know about this traveler\n\n${renderTravelerState(userId)}` },
+    CONCIERGE_SYSTEM,
+    `# What you know about this traveler\n\n${renderTravelerState(userId)}`,
   ]
 }
 
@@ -27,7 +27,10 @@ export function conciergeSystem(userId: string): Anthropic.TextBlockParam[] {
  * conversation can easily slice into the middle of one - especially once
  * proactive nudges have added unpaired assistant turns.
  */
-export function conversationMessages(userId: string, limit = 16): Anthropic.MessageParam[] {
+export function conversationMessages(
+  userId: string,
+  limit = 16,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
   const window = recentMessages(userId, limit)
   const firstUserTurn = window.findIndex((message) => message.role === 'user')
   if (firstUserTurn === -1) return []
@@ -50,12 +53,10 @@ export function transcriptText(userId: string, limit = 8): string {
  * each other.
  */
 export async function generateReply(userId: string): Promise<string> {
-  const stay = currentStay(userId)
-
   const result = await runAgent({
     system: conciergeSystem(userId),
     messages: conversationMessages(userId),
-    tools: [weatherTool(userId), experienceSearchTool(userId), webSearchTool(stay)],
+    tools: [weatherTool(userId), experienceSearchTool(userId)],
     effort: effort.reply,
     maxIterations: 6,
   })

@@ -1,122 +1,135 @@
-import type Anthropic from '@anthropic-ai/sdk'
-import { anthropic, RefusalError } from './client.js'
-import { config } from '../config.js'
+import type OpenAI from 'openai'
+import { llm, RefusalError, throwOnRouterError } from './client.js'
+import { config, reasoningParams, type EffortLevel } from '../config.js'
 import { logger } from '../util/log.js'
 
 const log = logger('agent')
 
 export interface AgentTool {
-  definition: Anthropic.Messages.ToolUnion
-  /** Omitted for server-side tools such as web_search, which Anthropic executes. */
-  run?: (input: Record<string, unknown>) => Promise<string>
+  /** Narrower than ChatCompletionTool, which also covers provider custom tools. */
+  definition: OpenAI.Chat.Completions.ChatCompletionFunctionTool
+  run: (input: Record<string, unknown>) => Promise<string>
 }
 
 export interface AgentRunOptions {
-  /** Split into blocks so a cache breakpoint can sit on the stable prefix. */
-  system: Anthropic.TextBlockParam[]
-  messages: Anthropic.MessageParam[]
+  /** Prepended as system turns, most stable first. */
+  system: string[]
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
   tools: AgentTool[]
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  effort?: EffortLevel
   maxIterations?: number
   maxTokens?: number
 }
 
 export interface AgentResult {
-  finalMessage: Anthropic.Message
   text: string
   toolCalls: string[]
 }
 
 /**
- * A hand-written tool-use loop rather than the SDK's beta tool runner.
- *
- * Two reasons: this process is long-running and we would rather not depend on a
- * beta surface, and mixing the server-side web_search tool in means `pause_turn`
- * has to be resumed manually regardless - which is most of what the runner would
- * have done for us here.
+ * A hand-written tool-use loop rather than an SDK helper, so the process keeps
+ * one obvious place to bound iterations and log what the model reached for.
  */
 export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
   const byName = new Map<string, AgentTool>()
   for (const tool of options.tools) {
-    byName.set((tool.definition as { name: string }).name, tool)
+    byName.set(tool.definition.function.name, tool)
   }
 
-  const messages: Anthropic.MessageParam[] = [...options.messages]
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    ...options.system.map(
+      (text): OpenAI.Chat.Completions.ChatCompletionMessageParam => ({
+        role: 'system',
+        content: text,
+      }),
+    ),
+    ...options.messages,
+  ]
   const definitions = options.tools.map((t) => t.definition)
   const maxIterations = options.maxIterations ?? 8
   const toolCalls: string[] = []
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const response = await anthropic.messages.create({
+    const response = await llm().chat.completions.create({
       model: config.model,
       max_tokens: options.maxTokens ?? 16000,
-      system: options.system,
       messages,
       tools: definitions,
-      thinking: { type: 'adaptive' },
-      output_config: { effort: options.effort ?? 'medium' },
+      ...reasoningParams(options.effort ?? 'medium'),
     })
+    throwOnRouterError(response)
 
-    if (response.stop_reason === 'refusal') {
-      const details = (response as { stop_details?: { category?: string; explanation?: string } })
-        .stop_details
-      throw new RefusalError(details?.category ?? null, details?.explanation ?? null)
+    const choice = response.choices[0]
+    if (!choice) throw new Error('OpenRouter returned no choices.')
+
+    // A structured refusal is a normal response, not a transport failure.
+    if (choice.message.refusal) {
+      throw new RefusalError(null, choice.message.refusal)
     }
 
-    messages.push({ role: 'assistant', content: response.content })
+    messages.push(choice.message)
 
-    // A server-side tool hit its iteration limit; re-send to let it continue.
-    if (response.stop_reason === 'pause_turn') {
-      log.debug('resuming paused turn')
-      continue
-    }
-
-    const toolUses = response.content.filter(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
-    )
-
-    if (toolUses.length === 0) {
-      return { finalMessage: response, text: collectText(response), toolCalls }
+    const requested = choice.message.tool_calls ?? []
+    if (requested.length === 0) {
+      return { text: choice.message.content?.trim() ?? '', toolCalls }
     }
 
     const results = await Promise.all(
-      toolUses.map(async (use): Promise<Anthropic.ToolResultBlockParam> => {
-        toolCalls.push(use.name)
-        const tool = byName.get(use.name)
-        if (!tool?.run) {
-          return {
-            type: 'tool_result',
-            tool_use_id: use.id,
-            content: `No handler registered for tool "${use.name}".`,
-            is_error: true,
+      requested.map(
+        async (call): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam> => {
+          // Only function calls carry a name to dispatch on; anything else is a
+          // provider extension we did not ask for.
+          if (call.type !== 'function') {
+            return {
+              role: 'tool',
+              tool_call_id: call.id,
+              content: `Unsupported tool call type "${call.type}".`,
+            }
           }
-        }
-        try {
-          const output = await tool.run((use.input ?? {}) as Record<string, unknown>)
-          return { type: 'tool_result', tool_use_id: use.id, content: output }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          log.warn(`tool ${use.name} failed`, message)
-          return {
-            type: 'tool_result',
-            tool_use_id: use.id,
-            content: `Tool failed: ${message}`,
-            is_error: true,
+
+          toolCalls.push(call.function.name)
+          const tool = byName.get(call.function.name)
+          if (!tool) {
+            return {
+              role: 'tool',
+              tool_call_id: call.id,
+              content: `No handler registered for tool "${call.function.name}".`,
+            }
           }
-        }
-      }),
+
+          // Arguments arrive as a JSON string, and a cheap model will sometimes
+          // emit something that does not parse. Report it back rather than
+          // throwing, so the model gets a chance to correct itself.
+          let input: Record<string, unknown>
+          try {
+            input = call.function.arguments ? JSON.parse(call.function.arguments) : {}
+          } catch {
+            log.warn(`tool ${call.function.name} sent unparseable arguments`)
+            return {
+              role: 'tool',
+              tool_call_id: call.id,
+              content: 'Arguments were not valid JSON. Call the tool again with valid JSON.',
+            }
+          }
+
+          try {
+            return { role: 'tool', tool_call_id: call.id, content: await tool.run(input) }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            log.warn(`tool ${call.function.name} failed`, message)
+            return { role: 'tool', tool_call_id: call.id, content: `Tool failed: ${message}` }
+          }
+        },
+      ),
     )
 
-    messages.push({ role: 'user', content: results })
+    messages.push(...results)
   }
 
   throw new Error(`Agent exceeded ${maxIterations} iterations without finishing.`)
 }
 
-export function collectText(message: Anthropic.Message): string {
-  return message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim()
+/** Text of a single-shot completion, for the call sites that use no tools. */
+export function collectText(response: OpenAI.Chat.Completions.ChatCompletion): string {
+  return response.choices[0]?.message.content?.trim() ?? ''
 }

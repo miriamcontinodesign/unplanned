@@ -24,7 +24,7 @@ stage. No third-party integrations.
 | Day-by-day itinerary flow map | **Done**, verified through the API |
 | Web identity: sessions, Telegram linking, user merge | **Done and tested** |
 | Activity catalogue | **Done and tested** (sample provider, no credentials) |
-| Telegram concierge and proactive engine | **Done**, untested against a live model |
+| Telegram concierge and proactive engine | **Done**; reply agent verified live, proactive engine still untested |
 | Booking hold and confirm | Built and tested, but descoped from the MVP |
 | Telegram `/link` command to redeem a code | **Not started** (the repo function exists and is tested) |
 | LLM enrichment of chat parsing | **Not started** |
@@ -38,7 +38,7 @@ npm run web:dev    # SPA on :5173, proxies /api to :8787
 
 Open http://localhost:5173 and say something like "Lisbon for 5 days".
 
-Neither an Anthropic key nor a Telegram token is required for the web flow.
+Neither an OpenRouter key nor a Telegram token is required for the web flow.
 
 ## The one architectural call worth knowing
 
@@ -61,7 +61,7 @@ the model pass.
 
 ## Verified, and how
 
-**82 smoke checks** (`npm run smoke`) - no credentials, real Open-Meteo calls.
+**99 smoke checks** (`npm run smoke`) - no credentials, real Open-Meteo calls.
 Covers migrations, opaque identity, web sessions, link codes and the user merge,
 the sample catalogue, the full booking path, the proactive gates, per-traveler
 serialisation, and the conversation window.
@@ -76,9 +76,15 @@ so there is no visual confirmation that it renders correctly. What *is* verified
 both typechecks pass, all nine modules transform cleanly through Vite, and the
 production build succeeds. Layout, spacing and visual polish are unverified.
 
-**Nothing that calls the model has ever run.** No Anthropic credentials on this
-machine. The extraction pass, reply agent, nudge agent, journal and photo
-captioning all typecheck against the SDK but have never made a request.
+**The model layer now runs, on OpenRouter.** Verified live against
+`google/gemini-2.5-flash-lite`: the extraction pass returns valid structured
+output and its writes land (stay recorded, preference captured, geocoding
+fired); the reply agent completes a tool-calling loop with `get_weather` and
+`search_experiences` confirmed to dispatch for real rather than be described;
+the journal renders. The whole run cost about a fifth of a cent.
+
+**Still unexercised against a live model:** photo captioning (the only vision
+path), the nudge agent, and the Telegram surface.
 
 ## Next
 

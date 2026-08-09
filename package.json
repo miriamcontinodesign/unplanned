@@ -19,15 +19,15 @@
     "web:typecheck": "tsc -p web/tsconfig.json"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.116.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
     "@hono/node-server": "^2.1.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.32.0",
     "hono": "^4.13.1",
     "luxon": "^3.5.0",
+    "openai": "^7.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

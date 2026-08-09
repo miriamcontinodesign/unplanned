@@ -31,10 +31,26 @@ export const config = {
    */
   telegramBotToken: optionalEnv('TELEGRAM_BOT_TOKEN'),
 
-  // The Anthropic SDK resolves credentials itself (ANTHROPIC_API_KEY, then
-  // ANTHROPIC_AUTH_TOKEN, then an `ant auth login` profile), so we deliberately
-  // don't require the key here - a machine set up with `ant auth login` works.
-  model: process.env.ROADIO_MODEL?.trim() || 'claude-opus-5',
+  /**
+   * Required for anything that calls the model. Left optional here so the web
+   * app and the smoke test still run without it, matching how the Telegram
+   * token behaves - the failure should come from the call, not from startup.
+   */
+  openRouterApiKey: optionalEnv('OPENROUTER_API_KEY'),
+
+  /**
+   * An OpenRouter model slug, not an Anthropic alias. Anything on their catalogue
+   * that supports `tools` and `structured_outputs` will work; the concierge needs
+   * both, and captioning additionally needs image input.
+   */
+  model: process.env.ROADIO_MODEL?.trim() || 'google/gemini-2.5-flash-lite',
+
+  /**
+   * OpenRouter's unified reasoning switch. On by default because the per-call
+   * effort levels below are a real part of the design, but worth turning off on
+   * the cheapest models, where reasoning tokens can cost more than they buy.
+   */
+  reasoning: booleanEnv('ROADIO_REASONING', true),
 
   dbPath: path.resolve(process.env.ROADIO_DB_PATH?.trim() || './data/roadio.db'),
   photoDir: path.resolve(process.env.ROADIO_PHOTO_DIR?.trim() || './data/photos'),
@@ -56,10 +72,23 @@ export const config = {
  * for latency; the extraction path is a narrow structured task that does not
  * need depth; the nudge path is unattended and gets the most room to think,
  * because deciding *not* to interrupt someone is the judgment call that matters.
+ *
+ * These map onto OpenRouter's unified `reasoning.effort`, which it translates
+ * per provider. Models that ignore reasoning entirely will simply disregard it,
+ * so a model swap never turns these into an error.
  */
+export type EffortLevel = 'low' | 'medium' | 'high'
+
 export const effort = {
   reply: 'medium',
   extract: 'low',
   nudge: 'high',
   caption: 'low',
-} as const
+} as const satisfies Record<string, EffortLevel>
+
+/** Spread into a request. Empty when reasoning is switched off. */
+export function reasoningParams(level: EffortLevel): {
+  reasoning?: { effort: EffortLevel }
+} {
+  return config.reasoning ? { reasoning: { effort: level } } : {}
+}

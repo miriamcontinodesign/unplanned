@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
-import { anthropic } from './client.js'
-import { config, effort } from '../config.js'
+import { zodResponseFormat } from 'openai/helpers/zod'
+import { llm, throwOnRouterError } from './client.js'
+import { config, effort, reasoningParams } from '../config.js'
 import { EXTRACTOR_SYSTEM } from './prompts.js'
 import { renderTravelerState } from './state.js'
 import { geocode } from '../services/geocode.js'
@@ -77,15 +77,13 @@ export async function extractAndApply(
 ): Promise<Extraction | null> {
   let extraction: Extraction
   try {
-    const response = await anthropic.messages.parse({
+    const response = await llm().chat.completions.parse({
       model: config.model,
       max_tokens: 8000,
-      system: EXTRACTOR_SYSTEM,
-      output_config: {
-        effort: effort.extract,
-        format: zodOutputFormat(Extraction),
-      },
+      response_format: zodResponseFormat(Extraction, 'extraction'),
+      ...reasoningParams(effort.extract),
       messages: [
+        { role: 'system', content: EXTRACTOR_SYSTEM },
         {
           role: 'user',
           content: [
@@ -104,11 +102,14 @@ export async function extractAndApply(
       ],
     })
 
-    if (!response.parsed_output) {
+    throwOnRouterError(response)
+
+    const parsed = response.choices[0]?.message.parsed
+    if (!parsed) {
       log.warn('extraction returned no parsed output')
       return null
     }
-    extraction = response.parsed_output
+    extraction = parsed
   } catch (error) {
     // Extraction failing must never block the reply - the traveler still gets
     // an answer, we just miss a state update.

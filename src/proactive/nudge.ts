@@ -1,4 +1,3 @@
-import type Anthropic from '@anthropic-ai/sdk'
 import { runAgent } from '../llm/agent.js'
 import { NUDGE_SYSTEM } from '../llm/prompts.js'
 import { renderTravelerState } from '../llm/state.js'
@@ -10,12 +9,7 @@ import {
   nudgeCountToday,
   type User,
 } from '../db/repo.js'
-import {
-  sendNudgeTool,
-  weatherTool,
-  webSearchTool,
-  type NudgeSink,
-} from '../tools/index.js'
+import { sendNudgeTool, weatherTool, type NudgeSink } from '../tools/index.js'
 import { experienceSearchTool } from '../components/index.js'
 import { isQuietHour, localTimeLabel, minutesSince } from '../util/time.js'
 
@@ -56,15 +50,11 @@ export function skipReason(user: User): string | null {
 export async function considerNudge(
   user: User,
 ): Promise<{ topic: string; message: string } | null> {
-  const stay = currentStay(user.id)
   const sink: NudgeSink = { value: null }
 
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: NUDGE_SYSTEM, cache_control: { type: 'ephemeral' } },
-    {
-      type: 'text',
-      text: `# What you know about this traveler\n\n${renderTravelerState(user.id)}`,
-    },
+  const system: string[] = [
+    NUDGE_SYSTEM,
+    `# What you know about this traveler\n\n${renderTravelerState(user.id)}`,
   ]
 
   const prompt = [
@@ -79,12 +69,7 @@ export async function considerNudge(
   await runAgent({
     system,
     messages: [{ role: 'user', content: prompt }],
-    tools: [
-      weatherTool(user.id),
-      experienceSearchTool(user.id),
-      webSearchTool(stay),
-      sendNudgeTool(sink),
-    ],
+    tools: [weatherTool(user.id), experienceSearchTool(user.id), sendNudgeTool(sink)],
     effort: effort.nudge,
     maxIterations: 8,
   })
