@@ -96,13 +96,31 @@ export const stays = sqliteTable('stays', {
   updatedAt: text('updated_at').notNull().$defaultFn(now),
 })
 
+/**
+ * Itinerary items. A trip is currently expressed in days rather than dates, so
+ * `dayIndex` (1-based) is the primary ordering and `onDate` is optional
+ * enrichment for when a real calendar date is known.
+ *
+ * `dropped` is how a passed-on recommendation is recorded: hidden everywhere in
+ * the UI, but retained so the recommender stops re-suggesting it.
+ */
 export const plans = sqliteTable('plans', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: text('user_id').notNull(),
   title: text('title').notNull(),
   detail: text('detail'),
+
+  dayIndex: integer('day_index'),
   onDate: text('on_date'),
   atTime: text('at_time'),
+
+  /** Snapshot of the catalogue item this came from, if any. */
+  provider: text('provider'),
+  productCode: text('product_code'),
+  priceAmount: real('price_amount'),
+  currency: text('currency'),
+  durationMinutes: integer('duration_minutes'),
+
   status: text('status', { enum: ['idea', 'booked', 'done', 'dropped'] })
     .notNull()
     .default('idea'),

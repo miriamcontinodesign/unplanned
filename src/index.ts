@@ -10,11 +10,21 @@ const log = logger('roadio')
 async function main(): Promise<void> {
   runMigrations()
 
-  // One mutex shared by the bot and the proactive engine: a scheduled nudge
-  // must never interleave with an inbound message for the same traveler.
+  // One mutex shared by every entry point: a scheduled nudge must never
+  // interleave with an inbound message for the same traveler.
   const mutex = new KeyedMutex()
-  const { bot, send } = createBot(mutex)
 
+  if (!config.telegramBotToken) {
+    // Web-only mode: the bot and the proactive engine both stay down. Once the
+    // HTTP server lands it will hold the event loop open and this process will
+    // serve the web app. Until then there is genuinely nothing to run, and
+    // exiting loudly beats idling in a way that looks like a hang.
+    log.info('TELEGRAM_BOT_TOKEN not set - the Telegram bot and proactive engine are disabled')
+    log.info('Nothing left to run: the HTTP server is not built yet. Exiting.')
+    return
+  }
+
+  const { bot, send } = createBot(config.telegramBotToken, mutex)
   const stopScheduler = startScheduler({ mutex, send })
 
   const shutdown = async (signal: string) => {

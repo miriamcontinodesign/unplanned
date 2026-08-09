@@ -282,26 +282,58 @@ export function listAllPlans(userId: string): Plan[] {
   return db.select().from(plans).where(eq(plans.userId, userId)).orderBy(plans.id).all()
 }
 
-export function addPlan(
-  userId: string,
-  plan: {
-    title: string
-    detail?: string | null
-    onDate?: string | null
-    atTime?: string | null
-    status?: Plan['status']
-  },
-): void {
+export type PlanInput = {
+  title: string
+  detail?: string | null
+  dayIndex?: number | null
+  onDate?: string | null
+  atTime?: string | null
+  provider?: string | null
+  productCode?: string | null
+  priceAmount?: number | null
+  currency?: string | null
+  durationMinutes?: number | null
+  status?: Plan['status']
+}
+
+export function addPlan(userId: string, plan: PlanInput): Plan {
   db.insert(plans)
     .values({
       userId,
       title: plan.title,
       detail: plan.detail ?? null,
+      dayIndex: plan.dayIndex ?? null,
       onDate: plan.onDate ?? null,
       atTime: plan.atTime ?? null,
+      provider: plan.provider ?? null,
+      productCode: plan.productCode ?? null,
+      priceAmount: plan.priceAmount ?? null,
+      currency: plan.currency ?? null,
+      durationMinutes: plan.durationMinutes ?? null,
       status: plan.status ?? 'idea',
     })
     .run()
+
+  return db
+    .select()
+    .from(plans)
+    .where(eq(plans.userId, userId))
+    .orderBy(desc(plans.id))
+    .get()!
+}
+
+/**
+ * Product codes the traveler has already accepted or passed on, so the
+ * recommender stops surfacing them. Passing on something hides it from the
+ * itinerary but keeps it here.
+ */
+export function decidedProductCodes(userId: string): Set<string> {
+  const rows = db
+    .select({ productCode: plans.productCode })
+    .from(plans)
+    .where(and(eq(plans.userId, userId), isNotNull(plans.productCode)))
+    .all()
+  return new Set(rows.map((row) => row.productCode!).filter(Boolean))
 }
 
 export function setPlanStatus(userId: string, planId: number, status: Plan['status']): void {
