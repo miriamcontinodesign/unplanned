@@ -117,7 +117,7 @@ export function RecommendationCard({
                 {callStatus === 'confirmed' && 'Booking confirmed'}
                 {callStatus === 'not_confirmed' && 'Not booked — try again'}
                 {callStatus === 'unavailable' && 'Calling unavailable — try again'}
-                {callStatus === 'idle' && 'Call to book'}
+                {callStatus === 'idle' && 'Book'}
               </span>
             </button>
           </div>
