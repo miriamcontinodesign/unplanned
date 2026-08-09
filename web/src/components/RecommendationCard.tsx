@@ -6,27 +6,24 @@ import type { Recommendation } from '../types'
 
 export function RecommendationCard({
   item,
-  tripDays,
   status,
   onAccept,
   onCall,
   onPass,
 }: {
   item: Recommendation
-  tripDays: number
   status: 'added' | 'passed' | undefined
-  onAccept: (day: number) => void
-  onCall: (day: number) => Promise<'handed_off'>
+  onAccept: () => void
+  onCall: () => Promise<'handed_off'>
   onPass: () => void
 }) {
-  const [day, setDay] = useState(item.suggestedDay)
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'handed_off' | 'unavailable'>('idle')
 
   const callToBook = async () => {
     if (callStatus === 'calling' || callStatus === 'handed_off') return
     setCallStatus('calling')
     try {
-      setCallStatus(await onCall(day))
+      setCallStatus(await onCall())
     } catch {
       setCallStatus('unavailable')
     }
@@ -81,29 +78,15 @@ export function RecommendationCard({
         {status === 'added' ? (
           <div className="rec-added">
             <CheckCircle2 />
-            <span>Added to Day {day}</span>
+            <span>Added ✓</span>
           </div>
         ) : (
           <div className="rec-actions">
-            <div className="rec-actions-row">
-              <select
-                className="day-picker"
-                value={day}
-                onChange={(event) => setDay(Number(event.target.value))}
-                aria-label={`Day for ${item.title}`}
-              >
-                {Array.from({ length: Math.max(tripDays, 1) }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>
-                    Day {n}
-                  </option>
-                ))}
-              </select>
-              <button className="btn-pass" onClick={onPass}>
-                Pass
-              </button>
-            </div>
-            <button className="btn-accept" onClick={() => onAccept(day)}>
-              <span>Add to itinerary</span>
+            <button className="btn-pass" onClick={onPass}>
+              Pass
+            </button>
+            <button className="btn-accept" onClick={onAccept}>
+              <span>Add</span>
               <ArrowRight />
             </button>
             <button

@@ -4,7 +4,7 @@
  * into them would silently destroy the prompt cache for every downstream block.
  */
 
-export const CONCIERGE_SYSTEM = `You are Roadio, a travel concierge that lives in a text thread with one traveler.
+export const CONCIERGE_SYSTEM = `You are Unplanned, a travel concierge that lives in a text thread with one traveler.
 
 # What you are for
 
@@ -38,7 +38,7 @@ Answer what was asked at the scope it was asked. If they ask where to get coffee
 
 Don't ask permission for small things. If a detail is genuinely ambiguous and the two readings lead somewhere different, ask one short question. Otherwise pick the sensible reading and go.`
 
-export const NUDGE_SYSTEM = `You are Roadio, a travel concierge deciding whether to interrupt a traveler with an unprompted message.
+export const NUDGE_SYSTEM = `You are Unplanned, a travel concierge deciding whether to interrupt a traveler with an unprompted message.
 
 # The decision
 

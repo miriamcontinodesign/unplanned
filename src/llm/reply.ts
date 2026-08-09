@@ -43,7 +43,7 @@ export function conversationMessages(
 
 export function transcriptText(userId: string, limit = 8): string {
   return recentMessages(userId, limit)
-    .map((message) => `${message.role === 'user' ? 'Traveler' : 'Roadio'}: ${message.text}`)
+    .map((message) => `${message.role === 'user' ? 'Traveler' : 'Unplanned'}: ${message.text}`)
     .join('\n')
 }
 

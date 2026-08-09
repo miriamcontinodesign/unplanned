@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, MapPin } from 'lucide-react'
+import { flushSync } from 'react-dom'
+import { CheckCircle2, RefreshCw } from 'lucide-react'
 import { api } from './api'
 import { Chat } from './components/Chat'
-import { ItinerarySheet } from './components/ItinerarySheet'
-import { ItineraryStrip } from './components/ItineraryStrip'
-import type { Recommendation, Snapshot } from './types'
+import { FooterTabs, type FooterTab } from './components/FooterTabs'
+import { Landing } from './components/Landing'
+import { Picks } from './components/Picks'
+import { TimeSlotPicker } from './components/TimeSlotPicker'
+import type { DetectedPlace } from './geolocate'
+import type { PickItem, Recommendation, Snapshot, TimeOfDay } from './types'
+
+/** Best guess before the server has weighed in with the trip's own timezone. */
+function guessSlot(): TimeOfDay {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) return 'morning'
+  if (hour >= 12 && hour < 17) return 'afternoon'
+  if (hour >= 17 && hour < 22) return 'evening'
+  return 'night'
+}
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
@@ -12,27 +25,43 @@ export default function App() {
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null)
   const [sampleData, setSampleData] = useState(false)
   const [cardStatus, setCardStatus] = useState<Record<string, 'added' | 'passed'>>({})
+  const [slot, setSlot] = useState<TimeOfDay>(guessSlot())
+  const [hasStarted, setHasStarted] = useState(false)
+  const [tab, setTab] = useState<FooterTab>('chat')
+  const [picks, setPicks] = useState<PickItem[]>([])
+  const [picksLoading, setPicksLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [linkCode, setLinkCode] = useState<string | null>(null)
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const [chatKey, setChatKey] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
 
-  // Recommendations aren't a separate view any more - each batch is pinned to
-  // the assistant turn that was current when it was fetched, so it renders as
-  // a carousel under that message instead of a global, ever-shifting list.
-  const refreshRecommendations = useCallback(async (attachIndex: number) => {
+  // Recommendations aren't a separate view - each batch is pinned to the
+  // assistant turn that was current when it was fetched, so it renders as a
+  // carousel under that message instead of a global, ever-shifting list.
+  const refreshRecommendations = useCallback(async (attachIndex: number, requestedSlot?: TimeOfDay) => {
     setLoadingIndex(attachIndex)
     try {
-      const result = await api.recommendations()
+      const result = await api.recommendations(requestedSlot)
       setCarousels((prev) => ({ ...prev, [attachIndex]: result.recommendations }))
       setSampleData(Boolean(result.sampleData))
+      setSlot(result.slot)
     } catch {
       // A failed refresh shouldn't blow away what's already on screen.
     } finally {
       setLoadingIndex((current) => (current === attachIndex ? null : current))
+    }
+  }, [])
+
+  const refreshPicks = useCallback(async () => {
+    setPicksLoading(true)
+    try {
+      const result = await api.picks()
+      setPicks(result.picks)
+    } catch {
+      // Leave whatever was already on screen.
+    } finally {
+      setPicksLoading(false)
     }
   }, [])
 
@@ -41,12 +70,18 @@ export default function App() {
       .me()
       .then((state) => {
         setSnapshot(state)
+        // A returning session with history skips the landing screen entirely,
+        // and does so before any transition helper is ever invoked - so it
+        // never animates, it just renders already-expanded.
+        if (state.messages.length > 0) setHasStarted(true)
         if (state.phase === 'ready' && state.messages.length > 0) {
+          // No explicit slot yet - let the server pick from the trip's timezone.
           void refreshRecommendations(state.messages.length - 1)
+          void refreshPicks()
         }
       })
       .catch((err: Error) => setError(err.message))
-  }, [refreshRecommendations])
+  }, [refreshRecommendations, refreshPicks])
 
   const showToast = (text: string) => {
     setToast(text)
@@ -55,13 +90,26 @@ export default function App() {
   }
 
   const send = async (text: string) => {
+    // The landing screen expands into the chat the instant the traveler
+    // acts, before the network round-trip resolves. Never flips back -
+    // an error on the very first message must still land in the (now
+    // expanded) chat log, not yank the screen back to the landing hero.
+    if (!hasStarted) {
+      const expand = () => setHasStarted(true)
+      if (document.startViewTransition) {
+        document.startViewTransition(() => flushSync(expand))
+      } else {
+        expand()
+      }
+    }
+
     setBusy(true)
     setError(null)
     try {
       const next = await api.chat(text)
       setSnapshot(next)
       if (next.phase === 'ready' && next.messages.length > 0) {
-        void refreshRecommendations(next.messages.length - 1)
+        void refreshRecommendations(next.messages.length - 1, slot)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -70,11 +118,39 @@ export default function App() {
     }
   }
 
-  const accept = async (productCode: string, day: number) => {
+  // Resolves a detected location silently - no chat message, no expand. The
+  // traveler still types their own first message afterwards.
+  const setLocation = async (place: DetectedPlace): Promise<{ ok: true } | { ok: false; message: string }> => {
     try {
-      setSnapshot(await api.accept(productCode, day))
+      setSnapshot(await api.setLocation(place))
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, message: (err as Error).message }
+    }
+  }
+
+  const changeSlot = (next: TimeOfDay) => {
+    setSlot(next)
+    if (snapshot && snapshot.messages.length > 0) {
+      void refreshRecommendations(snapshot.messages.length - 1, next)
+    }
+  }
+
+  const accept = async (productCode: string) => {
+    try {
+      await api.accept(productCode, slot)
       setCardStatus((prev) => ({ ...prev, [productCode]: 'added' }))
-      showToast(`Added to Day ${day}`)
+      showToast('Added ✓')
+      void refreshPicks()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  const removePick = async (id: number) => {
+    try {
+      await api.removePick(id)
+      void refreshPicks()
     } catch (err) {
       setError((err as Error).message)
     }
@@ -82,20 +158,22 @@ export default function App() {
 
   const pass = async (productCode: string) => {
     try {
-      setSnapshot(await api.pass(productCode))
+      await api.pass(productCode)
       setCardStatus((prev) => ({ ...prev, [productCode]: 'passed' }))
     } catch (err) {
       setError((err as Error).message)
     }
   }
 
-  const callToBook = async (productCode: string, day: number) => {
+  // No day-by-day itinerary to key the call off - "slot" (already known here)
+  // is the same time-of-day context the card's Add button uses.
+  const callToBook = async (productCode: string) => {
     // Open synchronously from the click so popup blockers do not reject the
-    // handoff while we wait for Roadio to prepare the Concierge Line task.
+    // handoff while we wait for the concierge task to be created.
     const conciergeWindow = window.open('about:blank', '_blank')
     if (conciergeWindow) conciergeWindow.opener = null
     try {
-      const handoff = await api.callToBook(productCode, day)
+      const handoff = await api.callToBook(productCode, slot)
       if (conciergeWindow) conciergeWindow.location.href = handoff.dashboardUrl
       else window.location.href = handoff.dashboardUrl
       showToast('Opened in Concierge Line')
@@ -106,40 +184,21 @@ export default function App() {
     }
   }
 
-  const remove = async (id: number) => {
-    try {
-      setSnapshot(await api.remove(id))
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  // Everything pinned to the old transcript has to go with it: carousels are
-  // keyed by message index, and the Chat's own draft and map overlay are
-  // internal, which is what the remount key clears.
-  const reset = async () => {
-    try {
-      setSnapshot(await api.reset())
-      setCarousels({})
-      setCardStatus({})
-      setSampleData(false)
-      setLinkCode(null)
-      setLoadingIndex(null)
-      setError(null)
-      setSheetOpen(false)
-      setChatKey((n) => n + 1)
-      showToast('Started a new trip')
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
   const getLinkCode = async () => {
     try {
       const result = await api.linkCode()
       setLinkCode(result.code)
     } catch (err) {
       setError((err as Error).message)
+    }
+  }
+
+  // Demo convenience: drop the session and reload as a brand new traveler.
+  const reset = async () => {
+    try {
+      await api.reset()
+    } finally {
+      window.location.reload()
     }
   }
 
@@ -154,18 +213,30 @@ export default function App() {
     )
   }
 
-  const plannedCount = snapshot.itinerary.reduce((total, day) => total + day.items.length, 0)
-  const tripDays = snapshot.trip?.days ?? 3
+  if (!hasStarted) {
+    return (
+      <div className="app-shell">
+        <Landing
+          greeting={snapshot.greeting}
+          busy={busy}
+          error={error}
+          onSend={send}
+          onReset={reset}
+          onLocate={setLocation}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="app-shell">
       <header className="masthead">
-        <div className="masthead-avatar">
-          <MapPin />
+        <div className="masthead-avatar" style={{ viewTransitionName: 'roadio-brand' }}>
+          <img src="/logo.png" alt="" />
         </div>
         <div className="masthead-titles">
           <div className="masthead-title-row">
-            <span className="wordmark">roadio</span>
+            <span className="wordmark">Unplanned</span>
             {snapshot.trip && <span className="trip-badge">{snapshot.trip.city}</span>}
           </div>
           <div className="masthead-sub">
@@ -174,7 +245,18 @@ export default function App() {
           </div>
         </div>
         <div className="masthead-spacer" />
-        {snapshot.user.linked && <div className="linked-chip">Telegram linked</div>}
+        <button className="masthead-reset" onClick={reset} title="Reset demo" aria-label="Reset">
+          <RefreshCw />
+        </button>
+        {snapshot.user.linked ? (
+          <div className="linked-chip">Telegram linked</div>
+        ) : linkCode ? (
+          <div className="linked-chip code">{linkCode}</div>
+        ) : (
+          <button className="linked-chip button" onClick={getLinkCode}>
+            Link Telegram
+          </button>
+        )}
       </header>
 
       {sampleData && (
@@ -184,6 +266,8 @@ export default function App() {
         </div>
       )}
 
+      {snapshot.trip && tab === 'chat' && <TimeSlotPicker value={slot} onChange={changeSlot} />}
+
       {toast && (
         <div className="toast">
           <CheckCircle2 />
@@ -191,39 +275,31 @@ export default function App() {
         </div>
       )}
 
-      <Chat
-        key={chatKey}
-        messages={snapshot.messages}
-        phase={snapshot.phase}
-        busy={busy}
-        error={error}
-        onSend={send}
-        carousels={carousels}
-        cardStatus={cardStatus}
-        tripDays={tripDays}
-        loadingIndex={loadingIndex}
-        onAccept={accept}
-        onCall={callToBook}
-        onPass={pass}
-        footer={
-          snapshot.trip && (
-            <ItineraryStrip plannedCount={plannedCount} tripDays={tripDays} onOpen={() => setSheetOpen(true)} />
-          )
-        }
-      />
+      {tab === 'chat' ? (
+        <Chat
+          messages={snapshot.messages}
+          greeting={snapshot.greeting}
+          phase={snapshot.phase}
+          busy={busy}
+          error={error}
+          onSend={send}
+          carousels={carousels}
+          cardStatus={cardStatus}
+          loadingIndex={loadingIndex}
+          onAccept={accept}
+          onCall={callToBook}
+          onPass={pass}
+          onLocate={setLocation}
+        />
+      ) : (
+        <div className="pane">
+          <div className="picks-scroll">
+            <Picks items={picks} loading={picksLoading} onRemove={removePick} />
+          </div>
+        </div>
+      )}
 
-      <ItinerarySheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        itinerary={snapshot.itinerary}
-        trip={snapshot.trip}
-        preferences={snapshot.preferences}
-        onRemove={remove}
-        onReset={reset}
-        linked={snapshot.user.linked}
-        linkCode={linkCode}
-        onGetLinkCode={getLinkCode}
-      />
+      {snapshot.trip && <FooterTabs tab={tab} picksCount={picks.length} onChange={setTab} />}
     </div>
   )
 }

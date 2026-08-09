@@ -233,6 +233,27 @@ function placeFromClause(clause: string): string | null {
   return text
 }
 
+const KNOWN_VOCAB_PHRASES = [
+  ...Object.values(INTEREST_KEYWORDS).flat(),
+  ...Object.values(BUDGET_KEYWORDS).flat(),
+]
+
+/**
+ * Geocoding is a fuzzy text search, not a place lookup - single words with no
+ * connection to geography can still resolve to *something* (an obscure
+ * airport code, a coincidental alternate name). "food" and "art" are two
+ * confirmed examples that resolve to real, unrelated places. A candidate that
+ * is entirely explained by mood/interest vocabulary is not a place attempt at
+ * all, so it should never reach the geocoder in the first place.
+ */
+function isKnownVocabOnly(text: string): boolean {
+  let remainder = ` ${text} `
+  for (const phrase of KNOWN_VOCAB_PHRASES) {
+    remainder = remainder.split(` ${phrase} `).join(' ')
+  }
+  return remainder.trim() === ''
+}
+
 /**
  * Candidate places in the order they were said. A message usually carries at
  * most one, but "Lisbon, then Porto" is a fair thing to type and the first that
@@ -263,7 +284,13 @@ export async function parseTurn(input: string): Promise<ParsedTurn> {
   const budgetLevel = parseBudget(input)
   const partySize = parsePartySize(input)
 
-  const candidates = candidatePlaces(input)
+  // Clause-splitting catches "Tokyo, I love food" (the prose clause is
+  // rejected by its pronoun, "Tokyo" stands alone). It does not by itself
+  // catch a lone recognised keyword like "food" or "art" typed on its own -
+  // those pass every per-clause check and still resolve to a real, unrelated
+  // place when geocoded (confirmed against the live API). Filtering out
+  // vocab-only candidates here covers exactly that gap.
+  const candidates = candidatePlaces(input).filter((candidate) => !isKnownVocabOnly(candidate))
   let destination: GeoResult | null = null
   for (const candidate of candidates.slice(0, MAX_GEOCODE_ATTEMPTS)) {
     destination = await geocode(candidate)

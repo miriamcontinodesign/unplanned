@@ -1,46 +1,52 @@
 import { activityProvider, type Activity } from '../providers/index.js'
-import {
-  currentStay,
-  decidedProductCodes,
-  listBookings,
-  listOpenPlans,
-  listPreferences,
-} from '../db/repo.js'
-import { seededUnit } from '../util/ids.js'
+import { currentStay, decidedProductCodes, listBookings, listPreferences } from '../db/repo.js'
+
+export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night'
 
 export interface Recommendation extends Activity {
   /** Why this was surfaced, grounded in what we actually know about the traveler. */
   reason: string
-  suggestedDay: number
 }
 
-const DEMO_STREETS = ['Market Lane', 'Garden Street', 'River Walk', 'Old Town Road', 'Central Avenue', 'Gallery Lane', 'Station Street', 'Harbour Road', 'Sunset Walk', 'Museum Lane']
+/** Hour (0-23, local to the traveler) to the slot the picker shows by default. */
+export function slotForHour(hour: number): TimeOfDay {
+  if (hour >= 5 && hour < 12) return 'morning'
+  if (hour >= 12 && hour < 17) return 'afternoon'
+  if (hour >= 17 && hour < 22) return 'evening'
+  return 'night'
+}
 
-function demoMeetingPoint(stay: NonNullable<ReturnType<typeof currentStay>>, productCode: string, index: number) {
-  const angle = seededUnit(productCode, 'map-angle') * Math.PI * 2
-  const distance = 0.003 + seededUnit(productCode, 'map-distance') * 0.012
-  const latitude = (stay.latitude ?? 0) + Math.sin(angle) * distance
-  const longitude = (stay.longitude ?? 0) + Math.cos(angle) * distance
-  const streetNumber = 10 + Math.floor(seededUnit(productCode, 'street-number') * 190)
-  const street = DEMO_STREETS[Math.floor(seededUnit(productCode, 'street') * DEMO_STREETS.length)]!
-  return {
-    name: `Demo meeting point ${index + 1}`,
-    address: `Demo · ${streetNumber} ${street}, ${stay.city}`,
-    latitude,
-    longitude,
-    isDemo: true,
-  }
+// What the catalogue's tags say about when an activity actually fits. Kept
+// separate from like/dislike scoring because a genuine interest match should
+// always outrank a slot fit - the traveler said what they want, the clock is
+// just a tiebreaker.
+const SLOT_FIT: Record<TimeOfDay, string[]> = {
+  morning: ['food', 'wellness', 'active', 'outdoors', 'history', 'walking'],
+  afternoon: ['food', 'outdoors', 'active', 'art', 'history', 'culture', 'scenic', 'water', 'day-trip'],
+  evening: ['food', 'scenic', 'culture', 'social', 'private', 'relaxed'],
+  night: ['nightlife', 'social', 'scenic'],
+}
+
+const SLOT_MISMATCH: Record<TimeOfDay, string[]> = {
+  morning: ['nightlife'],
+  afternoon: ['nightlife'],
+  evening: [],
+  night: ['outdoors', 'active', 'wellness', 'day-trip'],
 }
 
 /**
- * Rank the catalogue against trip memory.
+ * Rank the catalogue against trip memory and the time of day.
  *
- * Deliberately deterministic: interest overlap, budget fit and rating. A model
- * pass can rewrite the reasons in a warmer voice later, but the ordering should
- * stay explainable - a recommendation the traveler cannot see the logic of is
- * indistinguishable from a random one.
+ * Deliberately deterministic: interest overlap, budget fit, rating and slot
+ * fit. A model pass can rewrite the reasons in a warmer voice later, but the
+ * ordering should stay explainable - a recommendation the traveler cannot see
+ * the logic of is indistinguishable from a random one.
  */
-export async function recommendationsFor(userId: string, limit = 10): Promise<Recommendation[]> {
+export async function recommendationsFor(
+  userId: string,
+  timeOfDay: TimeOfDay,
+  limit = 8,
+): Promise<Recommendation[]> {
   const stay = currentStay(userId)
   if (!stay) return []
 
@@ -51,13 +57,6 @@ export async function recommendationsFor(userId: string, limit = 10): Promise<Re
     .filter((p) => p.kind === 'dislike')
     .map((p) => p.text.toLowerCase())
 
-  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-  const fromDate = stay.arrivalDate && stay.arrivalDate >= tomorrow ? stay.arrivalDate : tomorrow
-  const toDate = stay.departureDate && stay.departureDate >= fromDate
-    ? stay.departureDate
-    : new Date(Date.parse(`${fromDate}T12:00:00Z`) + Math.max(stay.nights ?? 3, 1) * 86_400_000)
-      .toISOString().slice(0, 10)
-
   const activities = await activityProvider().search({
     userId,
     destination: stay.city,
@@ -65,8 +64,6 @@ export async function recommendationsFor(userId: string, limit = 10): Promise<Re
     interests: likes,
     budgetLevel: stay.budgetLevel,
     partySize: stay.partySize ?? 2,
-    fromDate,
-    toDate,
     limit: 24,
   })
 
@@ -77,8 +74,8 @@ export async function recommendationsFor(userId: string, limit = 10): Promise<Re
   }
   const fresh = activities.filter((activity) => !decided.has(activity.productCode))
 
-  const days = Math.max(stay.nights ?? 3, 1)
-  const alreadyPlanned = listOpenPlans(userId).length
+  const slotFit = SLOT_FIT[timeOfDay]
+  const slotMismatch = SLOT_MISMATCH[timeOfDay]
 
   const scored = fresh.map((activity) => {
     const matched = activity.tags.filter((tag) =>
@@ -87,31 +84,38 @@ export async function recommendationsFor(userId: string, limit = 10): Promise<Re
     const clashes = activity.tags.filter((tag) =>
       dislikes.some((dislike) => dislike.includes(tag) || tag.includes(dislike)),
     )
+    const fits = activity.tags.filter((tag) => slotFit.includes(tag))
+    const mismatches = activity.tags.filter((tag) => slotMismatch.includes(tag))
 
-    const score = matched.length * 10 - clashes.length * 8 + (activity.rating ?? 0)
-    return { activity, score, matched }
+    const score =
+      matched.length * 10 - clashes.length * 8 + (activity.rating ?? 0) + fits.length * 5 - mismatches.length * 12
+    return { activity, score, matched, fits }
   })
 
   scored.sort((a, b) => b.score - a.score)
 
-  return scored.slice(0, limit).map((entry, index) => ({
-    ...entry.activity,
-    meetingPoint: demoMeetingPoint(stay, entry.activity.productCode, index),
-    reason: buildReason(entry.activity, entry.matched, stay.budgetLevel),
-    // Spread suggestions across the trip rather than stacking them on day one.
-    suggestedDay: ((alreadyPlanned + index) % days) + 1,
-  }))
+  return scored
+    .slice(0, limit)
+    .map((entry) => ({
+      ...entry.activity,
+      reason: buildReason(entry.activity, entry.matched, entry.fits, timeOfDay, stay.budgetLevel),
+    }))
 }
 
 function buildReason(
   activity: Activity,
   matched: string[],
+  slotMatched: string[],
+  timeOfDay: TimeOfDay,
   budgetLevel: string | null,
 ): string {
   const parts: string[] = []
 
   if (matched.length > 0) {
     parts.push(`matches your interest in ${matched.slice(0, 2).join(' and ')}`)
+  }
+  if (slotMatched.length > 0) {
+    parts.push(`a good fit for ${timeOfDay}`)
   }
   if ((activity.rating ?? 0) >= 4.7) {
     parts.push(`${activity.rating!.toFixed(1)} from ${activity.reviewCount?.toLocaleString() ?? 'past'} travellers`)
