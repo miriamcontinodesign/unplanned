@@ -114,16 +114,16 @@ function buildReason(
     parts.push(`matches your interest in ${matched.slice(0, 2).join(' and ')}`)
   }
   if ((activity.rating ?? 0) >= 4.7) {
-    parts.push(`rated ${activity.rating} by ${activity.reviewCount?.toLocaleString() ?? 'past'} travellers`)
+    parts.push(`${activity.rating!.toFixed(1)} from ${activity.reviewCount?.toLocaleString() ?? 'past'} travellers`)
   }
   if (budgetLevel === 'shoestring' && activity.fromPrice.amount <= 60) {
     parts.push('and cheap')
   }
   if (activity.freeCancellation) {
-    parts.push('free to cancel')
+    parts.push('free cancellation')
   }
 
   if (parts.length === 0) return 'A solid, well-reviewed option in the city.'
-  const sentence = parts.join(', ')
+  const sentence = parts.join(' · ')
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + '.'
 }

@@ -26,6 +26,7 @@ import {
 import { greeting, handleTurn, phaseFor, placeLabel } from '../onboarding/engine.js'
 import { recommendationsFor } from '../onboarding/recommend.js'
 import { activityProvider } from '../providers/index.js'
+import { bookingState, startBooking } from '../concierge/client.js'
 
 const log = logger('http')
 
@@ -168,6 +169,43 @@ export function createServer(mutex: KeyedMutex) {
   app.get('/api/bookings/confirmed', (c) => {
     const confirmed = listBookings(c.get('user').id).filter((booking) => booking.status === 'confirmed')
     return c.json({ bookings: confirmed })
+  })
+
+  app.post('/api/bookings/call', async (c) => {
+    const user = c.get('user')
+    const body: { productCode?: string; dayIndex?: number } = await c.req.json().catch(() => ({}))
+    if (!body.productCode) return c.json({ error: 'productCode is required.' }, 400)
+
+    const activity = await activityProvider().get(body.productCode)
+    if (!activity) return c.json({ error: 'That activity is no longer listed.' }, 404)
+
+    const stay = currentStay(user.id)
+    const dayIndex = Math.max(body.dayIndex ?? 1, 1)
+    const baseDate = stay?.arrivalDate && /^\d{4}-\d{2}-\d{2}$/.test(stay.arrivalDate)
+      ? stay.arrivalDate
+      : new Date().toISOString().slice(0, 10)
+    const travelDate = new Date(Date.parse(`${baseDate}T12:00:00Z`) + (dayIndex - 1) * 86_400_000)
+      .toISOString().slice(0, 10)
+
+    const taskId = await startBooking({
+      venueName: activity.title,
+      venueKind: 'tour',
+      venueAddress: activity.meetingPoint?.address,
+      date: travelDate,
+      time: '18:00',
+      partySize: Math.max(stay?.partySize ?? 1, 1),
+      travelerName: user.displayName,
+      notes: 'Please ask about availability and how to complete the booking.',
+    })
+
+    if (!taskId) return c.json({ error: 'The calling service is unavailable right now.' }, 503)
+    return c.json({ taskId, status: 'dialing' })
+  })
+
+  app.get('/api/bookings/call/:taskId', async (c) => {
+    const state = await bookingState(c.req.param('taskId'))
+    if (!state) return c.json({ error: 'The call status is unavailable.' }, 503)
+    return c.json(state)
   })
 
   app.post('/api/bookings/confirm', async (c) => {

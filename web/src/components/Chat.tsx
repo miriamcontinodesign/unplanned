@@ -23,6 +23,7 @@ export function Chat({
   tripDays,
   loadingIndex,
   onAccept,
+  onCall,
   onPass,
   footer,
 }: {
@@ -37,6 +38,7 @@ export function Chat({
   tripDays: number
   loadingIndex: number | null
   onAccept: (productCode: string, day: number) => void
+  onCall: (productCode: string, day: number) => Promise<'confirmed' | 'not_confirmed'>
   onPass: (productCode: string) => void
   footer?: ReactNode
 }) {
@@ -97,6 +99,7 @@ export function Chat({
                       tripDays={tripDays}
                       status={cardStatus[item.productCode]}
                       onAccept={(day) => onAccept(item.productCode, day)}
+                      onCall={(day) => onCall(item.productCode, day)}
                       onPass={() => onPass(item.productCode)}
                     />
                     ))}

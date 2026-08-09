@@ -485,8 +485,11 @@ select {
 }
 
 .rec-pill.category {
+  max-width: 62%;
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.38);
   color: #fff;
+  text-overflow: ellipsis;
 }
 
 .rec-pill.badge {
@@ -522,12 +525,7 @@ select {
   color: var(--ink);
   line-height: 1.3;
   margin: 0;
-}
-
-.rec-summary {
-  font-size: 11px;
-  color: var(--muted);
-  margin: 0;
+  min-height: 34px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -535,9 +533,6 @@ select {
 }
 
 .rec-reason {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
   background: var(--bg-app);
   border: 1px solid var(--border-soft);
   border-radius: 12px;
@@ -548,12 +543,12 @@ select {
   line-height: 1.35;
 }
 
-.rec-reason svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-  width: 12px;
-  height: 12px;
-  color: var(--amber);
+.rec-reason span {
+  height: calc(3 * 1.35em);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .rec-meta {
@@ -651,6 +646,58 @@ select {
   width: 12px;
   height: 12px;
   color: var(--amber);
+}
+
+.btn-call {
+  width: 100%;
+  padding: 9px 10px;
+  background: var(--amber);
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--amber) 78%, var(--ink));
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 750;
+  transition: transform 0.15s, filter 0.15s;
+}
+
+.btn-call:hover {
+  filter: brightness(0.96);
+}
+
+.btn-call.is-calling,
+.btn-call.is-confirmed {
+  cursor: default;
+}
+
+.btn-call.is-confirmed {
+  background: var(--positive-bg);
+  border-color: var(--positive-border);
+  color: var(--positive);
+}
+
+.btn-call.is-unavailable {
+  background: var(--bg-app);
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+.btn-call.is-not_confirmed {
+  background: var(--bg-app);
+  border-color: var(--amber);
+  color: var(--ink-soft);
+}
+
+.btn-call:active {
+  transform: scale(0.98);
+}
+
+.btn-call svg {
+  width: 13px;
+  height: 13px;
 }
 
 .rec-added {
