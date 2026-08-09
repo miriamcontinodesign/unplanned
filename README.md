@@ -86,7 +86,7 @@ From then on it knows where you are.
 
 Bookable experience search uses Viator's hosted MCP endpoint and needs no separate API key. `ROADIO_VIATOR_MCP_URL` can override the endpoint if Viator changes it.
 
-For local demos and deterministic tests, set `ROADIO_VIATOR_MOCK=true`. Roadio then uses the same `search_experiences` component against a small fixture catalog—cooking classes in Brooklyn, Rome, Tokyo, and Barcelona, plus food-tour and kayaking examples—without making network calls. Mock booking links end in `example.invalid`, and mock operator contacts use reserved `+1 212 555-01xx` fictional numbers. Results mark those contacts as mock data so a downstream calling component can refuse to dial them.
+For local demos and deterministic tests, set `ROADIO_VIATOR_MOCK=true`. Roadio then uses the same `search_experiences` component against a fixture catalog without making network calls. It includes cooking experiences in Lisbon, Brooklyn, New Orleans, San Francisco, Austin, Chicago, Rome, Tokyo, and Barcelona, plus food-tour and kayaking examples. Mock booking links end in `example.invalid`, and US mock operators use reserved `+1 ... 555-01xx` fictional numbers. Results mark those contacts as mock data so a downstream calling component can refuse to dial them.
 
 ## Commands
 

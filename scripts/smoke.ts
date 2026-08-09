@@ -309,6 +309,22 @@ async function main(): Promise<void> {
       Boolean(experience.recommendationContext?.availableStartTimes?.length) &&
       experience.recommendationContext?.crowdLevel === 'quiet'),
   )
+  const usCallingMocks = searchMockExperiences(userId, {
+    searchTerm: 'cooking class in Chicago',
+    startDate: '2026-08-15',
+    endDate: '2026-08-15',
+    currency: 'USD',
+  })
+  check(
+    'US mock search stays in the requested city',
+    usCallingMocks.experiences.length === 1 &&
+    usCallingMocks.experiences[0]?.code === 'MOCK-US-CHICAGO-PIZZA',
+  )
+  check(
+    'US calling mock has a reserved phone number',
+    usCallingMocks.experiences[0]?.contactPhone === '+13125550112' &&
+    usCallingMocks.experiences[0]?.contactPhoneIsMock === true,
+  )
 
   section('proactive gates')
   repo.addMessage(userId, 'user', 'landed in Lima, staying in Miraflores till Sunday')
