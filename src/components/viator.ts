@@ -13,51 +13,56 @@ import { searchMockExperiences } from './viator.mock.js'
 export function experienceSearchTool(userId: string): AgentTool {
   return {
     definition: {
-      name: 'search_experiences',
-      description:
-        'Search Viator for current, bookable tours and activities. Use for experience recommendations when the traveler gives, or their trip context establishes, a destination and participation date. Results include live product links; searching does not check out or book anything.',
-      input_schema: {
-        type: 'object',
-        properties: {
-          searchTerm: {
-            type: 'string',
-            description:
-              'Destination, activity, and preferences only, e.g. "family-friendly food tours in Rome". Do not put dates, prices, duration, or currency here.',
+      type: 'function',
+      function: {
+        name: 'search_experiences',
+        description:
+          'Search Viator for current, bookable tours and activities. Use for experience recommendations when the traveler gives, or their trip context establishes, a destination and participation date. Results include live product links; searching does not check out or book anything.',
+        parameters: {
+          type: 'object',
+          properties: {
+            searchTerm: {
+              type: 'string',
+              description:
+                'Destination, activity, and preferences only, e.g. "family-friendly food tours in Rome". Do not put dates, prices, duration, or currency here.',
+            },
+            startDate: {
+              type: 'string',
+              description: 'First participation date in YYYY-MM-DD format; cannot be in the past.',
+            },
+            endDate: {
+              type: 'string',
+              description:
+                'Last participation date in YYYY-MM-DD format. Use the start date for a single day.',
+            },
+            duration: {
+              type: 'integer',
+              description: 'Optional maximum duration in minutes.',
+            },
+            fromPrice: {
+              type: 'number',
+              description: 'Optional minimum per-person price.',
+            },
+            toPrice: {
+              type: 'number',
+              description: 'Optional maximum per-person price.',
+            },
+            currency: {
+              type: 'string',
+              description: 'ISO 4217 currency code. Defaults to USD.',
+            },
+            locale: {
+              type: 'string',
+              description: 'Content locale such as en-US. Defaults to en.',
+            },
+            limit: {
+              type: 'integer',
+              description:
+                'Number of results, 1 to 10. Defaults to 3; prefer three strong choices.',
+            },
           },
-          startDate: {
-            type: 'string',
-            description: 'First participation date in YYYY-MM-DD format; cannot be in the past.',
-          },
-          endDate: {
-            type: 'string',
-            description: 'Last participation date in YYYY-MM-DD format. Use the start date for a single day.',
-          },
-          duration: {
-            type: 'integer',
-            description: 'Optional maximum duration in minutes.',
-          },
-          fromPrice: {
-            type: 'number',
-            description: 'Optional minimum per-person price.',
-          },
-          toPrice: {
-            type: 'number',
-            description: 'Optional maximum per-person price.',
-          },
-          currency: {
-            type: 'string',
-            description: 'ISO 4217 currency code. Defaults to USD.',
-          },
-          locale: {
-            type: 'string',
-            description: 'Content locale such as en-US. Defaults to en.',
-          },
-          limit: {
-            type: 'integer',
-            description: 'Number of results, 1 to 10. Defaults to 3; prefer three strong choices.',
-          },
+          required: ['searchTerm', 'startDate', 'endDate'],
         },
-        required: ['searchTerm', 'startDate', 'endDate'],
       },
     },
     async run(input) {

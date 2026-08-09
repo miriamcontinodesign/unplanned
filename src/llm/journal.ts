@@ -1,5 +1,5 @@
-import { anthropic } from './client.js'
-import { config } from '../config.js'
+import { llm, throwOnRouterError } from './client.js'
+import { config, reasoningParams } from '../config.js'
 import { collectText } from './agent.js'
 import { describeStay } from './state.js'
 import { listAllPlans, listJournal, listStays } from '../db/repo.js'
@@ -42,15 +42,18 @@ export async function generateJournal(userId: string): Promise<string> {
       : ['- (none recorded)']),
   ].join('\n')
 
-  const response = await anthropic.messages.create({
+  const response = await llm().chat.completions.create({
     model: config.model,
     max_tokens: 8000,
-    system: JOURNAL_SYSTEM,
-    output_config: { effort: 'medium' },
-    messages: [{ role: 'user', content: `Trip record:\n\n${record}` }],
+    ...reasoningParams('medium'),
+    messages: [
+      { role: 'system', content: JOURNAL_SYSTEM },
+      { role: 'user', content: `Trip record:\n\n${record}` },
+    ],
   })
+  throwOnRouterError(response)
 
-  if (response.stop_reason === 'refusal') {
+  if (response.choices[0]?.message.refusal) {
     return "I couldn't put the journal together just now. Try again in a moment."
   }
   return collectText(response) || 'The record is too thin to write anything from yet.'
