@@ -36,7 +36,7 @@ export function Chat({
   tripDays: number
   loadingIndex: number | null
   onAccept: (productCode: string, day: number) => void
-  onCall: (productCode: string, day: number) => Promise<'confirmed' | 'not_confirmed'>
+  onCall: (productCode: string, day: number) => Promise<'handed_off'>
   onPass: (productCode: string) => void
   footer?: ReactNode
 }) {

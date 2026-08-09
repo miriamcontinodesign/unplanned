@@ -669,11 +669,11 @@ select {
 }
 
 .btn-call.is-calling,
-.btn-call.is-confirmed {
+.btn-call.is-handed_off {
   cursor: default;
 }
 
-.btn-call.is-confirmed {
+.btn-call.is-handed_off {
   background: var(--positive-bg);
   border-color: var(--positive-border);
   color: var(--positive);
@@ -683,12 +683,6 @@ select {
   background: var(--bg-app);
   border-color: var(--border-strong);
   color: var(--muted);
-}
-
-.btn-call.is-not_confirmed {
-  background: var(--bg-app);
-  border-color: var(--amber);
-  color: var(--ink-soft);
 }
 
 .btn-call:active {

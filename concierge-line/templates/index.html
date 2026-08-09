@@ -265,7 +265,7 @@ const MAIN_APP_URL = "__MAIN_APP_URL__";
 const $ = (id) => document.getElementById(id);
 
 let tasks = [];
-let selectedId = null;
+let selectedId = new URLSearchParams(window.location.search).get("task");
 let lastSignature = "";
 
 if (MAIN_APP_URL) {

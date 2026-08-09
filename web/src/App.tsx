@@ -90,20 +90,20 @@ export default function App() {
   }
 
   const callToBook = async (productCode: string, day: number) => {
-    const call = await api.callToBook(productCode, day)
-    showToast('Calling now — we’ll ask about availability')
-    const deadline = Date.now() + 5 * 60_000
-
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1500))
-      const result = await api.callStatus(call.taskId)
-      if (result.status === 'completed') {
-        return result.confirmed === true ? 'confirmed' : 'not_confirmed'
-      }
-      if (result.status === 'failed') return 'not_confirmed'
+    // Open synchronously from the click so popup blockers do not reject the
+    // handoff while we wait for Roadio to prepare the Concierge Line task.
+    const conciergeWindow = window.open('about:blank', '_blank')
+    if (conciergeWindow) conciergeWindow.opener = null
+    try {
+      const handoff = await api.callToBook(productCode, day)
+      if (conciergeWindow) conciergeWindow.location.href = handoff.dashboardUrl
+      else window.location.href = handoff.dashboardUrl
+      showToast('Opened in Concierge Line')
+      return 'handed_off' as const
+    } catch (error) {
+      conciergeWindow?.close()
+      throw error
     }
-
-    throw new Error('Call status timed out.')
   }
 
   const remove = async (id: number) => {

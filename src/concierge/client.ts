@@ -24,6 +24,10 @@ function baseUrl(): string {
   return (process.env.CONCIERGE_LINE_URL ?? 'http://127.0.0.1:8000').trim().replace(/\/$/, '')
 }
 
+export function conciergeTaskUrl(taskId: string): string {
+  return `${baseUrl()}/?task=${encodeURIComponent(taskId)}`
+}
+
 export function conciergeEnabled(): boolean {
   return baseUrl().length > 0
 }
@@ -119,11 +123,8 @@ export async function conciergeReady(): Promise<boolean> {
   return health?.ok === true && health.fake_call_mode === false
 }
 
-/**
- * Create the call task and start dialling. Returns immediately - the call runs
- * in the background on the voice module, so this never blocks a request.
- */
-export async function startBooking(request: BookingRequest): Promise<string | null> {
+/** Create a queued task for Concierge Line to own from its dashboard. */
+export async function createBookingTask(request: BookingRequest): Promise<string | null> {
   const created = (await call('/api/tasks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -146,6 +147,16 @@ export async function startBooking(request: BookingRequest): Promise<string | nu
   })) as TaskPayload | null
 
   const taskId = asString(created?.id)
+  return taskId
+}
+
+/**
+ * Create the call task and start dialling. Retained for non-dashboard callers;
+ * the Roadio web handoff uses createBookingTask so Concierge Line stays in
+ * control of when the call begins.
+ */
+export async function startBooking(request: BookingRequest): Promise<string | null> {
+  const taskId = await createBookingTask(request)
   if (taskId === null) return null
 
   const started = await call(`/api/tasks/${taskId}/call`, { method: 'POST' })
