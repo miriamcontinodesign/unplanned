@@ -21,9 +21,19 @@ export interface Activity {
   freeCancellation: boolean
   /** The operator's own page. Used for deeplink booking and "read more". */
   productUrl: string | null
+  /** Verified supplier meeting point. Omitted when Viator has not supplied one. */
+  meetingPoint?: {
+    name: string
+    address: string
+    latitude: number
+    longitude: number
+    isDemo?: boolean
+  } | null
 }
 
 export interface ActivitySearchQuery {
+  /** Stable Roadio traveler id used to maintain the Viator MCP search session. */
+  userId?: string
   destination: string
   countryCode?: string | null
   interests?: string[]

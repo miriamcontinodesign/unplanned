@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Send } from 'lucide-react'
 import { RecommendationCard } from './RecommendationCard'
 import { RecommendationMap } from './RecommendationMap'
@@ -41,12 +41,23 @@ export function Chat({
   footer?: ReactNode
 }) {
   const [draft, setDraft] = useState('')
-  const [mappedItems, setMappedItems] = useState<Recommendation[] | null>(null)
+  const [shownMapKeys, setShownMapKeys] = useState<Set<string>>(() => new Set())
   const logRef = useRef<HTMLDivElement>(null)
+
+  const latestSearchKey = useMemo(() => Object.entries(carousels)
+    .filter(([, items]) => items.length > 0)
+    .sort(([left], [right]) => Number(right) - Number(left))[0]?.[0] ?? null, [carousels])
+
+  const mapItems = useMemo(() => {
+    const latest = latestSearchKey === null ? [] : carousels[Number(latestSearchKey)] ?? []
+    return latest
+      .filter((item) => cardStatus[item.productCode] !== 'passed')
+      .slice(0, 10)
+  }, [carousels, cardStatus, latestSearchKey])
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages.length, busy, loadingIndex, mappedItems])
+  }, [messages.length, busy, loadingIndex, shownMapKeys.size, mapItems.length])
 
   const submit = (text: string) => {
     const trimmed = text.trim()
@@ -77,8 +88,9 @@ export function Chat({
               )}
 
               {cards && cards.length > 0 && (
-                <div className="carousel">
-                  {cards.map((item) => (
+                <>
+                  <div className="carousel">
+                    {cards.map((item) => (
                     <RecommendationCard
                       key={item.productCode}
                       item={item}
@@ -87,8 +99,21 @@ export function Chat({
                       onAccept={(day) => onAccept(item.productCode, day)}
                       onPass={() => onPass(item.productCode)}
                     />
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  {shownMapKeys.has(String(index)) && (
+                    <div className="msg-group assistant map-message">
+                      <RecommendationMap
+                        items={cards.filter((item) => cardStatus[item.productCode] !== 'passed').slice(0, 10)}
+                        onClose={() => setShownMapKeys((current) => {
+                          const next = new Set(current)
+                          next.delete(String(index))
+                          return next
+                        })}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )
@@ -104,25 +129,15 @@ export function Chat({
 
         {error && <div className="bubble error">{error}</div>}
 
-        {mappedItems && (
-          <div className="msg-group assistant map-message">
-            <RecommendationMap items={mappedItems} onClose={() => setMappedItems(null)} />
-          </div>
-        )}
       </div>
 
       {!busy && (
         <div className="suggestion-row">
-          {phase === 'ready' && Object.values(carousels).some((items) => items.length > 0) && (
-            <button
-              onClick={() => {
-                const unique = new Map<string, Recommendation>()
-                Object.values(carousels).flat().forEach((item) => {
-                  if (cardStatus[item.productCode] !== 'passed') unique.set(item.productCode, item)
-                })
-                setMappedItems([...unique.values()])
-              }}
-            >
+          {phase === 'ready' && mapItems.length > 0 && (
+            <button onClick={() => {
+              if (latestSearchKey === null) return
+              setShownMapKeys((current) => new Set(current).add(latestSearchKey))
+            }}>
               show on map
             </button>
           )}

@@ -1,5 +1,7 @@
 import { logger } from '../util/log.js'
+import { config } from '../config.js'
 import { FixtureProvider } from './fixtures.js'
+import { ViatorProvider } from './viator.js'
 import type { ActivityProvider } from './types.js'
 
 const log = logger('providers')
@@ -17,8 +19,8 @@ let provider: ActivityProvider | null = null
  */
 export function activityProvider(): ActivityProvider {
   if (!provider) {
-    provider = new FixtureProvider()
-    log.info('activity provider: sample catalogue (no credentials required)')
+    provider = config.viatorMock ? new FixtureProvider() : new ViatorProvider()
+    log.info(config.viatorMock ? 'activity provider: sample catalogue' : 'activity provider: live Viator MCP')
   }
   return provider
 }

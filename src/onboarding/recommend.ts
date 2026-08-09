@@ -6,11 +6,30 @@ import {
   listOpenPlans,
   listPreferences,
 } from '../db/repo.js'
+import { seededUnit } from '../util/ids.js'
 
 export interface Recommendation extends Activity {
   /** Why this was surfaced, grounded in what we actually know about the traveler. */
   reason: string
   suggestedDay: number
+}
+
+const DEMO_STREETS = ['Market Lane', 'Garden Street', 'River Walk', 'Old Town Road', 'Central Avenue', 'Gallery Lane', 'Station Street', 'Harbour Road', 'Sunset Walk', 'Museum Lane']
+
+function demoMeetingPoint(stay: NonNullable<ReturnType<typeof currentStay>>, productCode: string, index: number) {
+  const angle = seededUnit(productCode, 'map-angle') * Math.PI * 2
+  const distance = 0.003 + seededUnit(productCode, 'map-distance') * 0.012
+  const latitude = (stay.latitude ?? 0) + Math.sin(angle) * distance
+  const longitude = (stay.longitude ?? 0) + Math.cos(angle) * distance
+  const streetNumber = 10 + Math.floor(seededUnit(productCode, 'street-number') * 190)
+  const street = DEMO_STREETS[Math.floor(seededUnit(productCode, 'street') * DEMO_STREETS.length)]!
+  return {
+    name: `Demo meeting point ${index + 1}`,
+    address: `Demo · ${streetNumber} ${street}, ${stay.city}`,
+    latitude,
+    longitude,
+    isDemo: true,
+  }
 }
 
 /**
@@ -21,7 +40,7 @@ export interface Recommendation extends Activity {
  * stay explainable - a recommendation the traveler cannot see the logic of is
  * indistinguishable from a random one.
  */
-export async function recommendationsFor(userId: string, limit = 8): Promise<Recommendation[]> {
+export async function recommendationsFor(userId: string, limit = 10): Promise<Recommendation[]> {
   const stay = currentStay(userId)
   if (!stay) return []
 
@@ -32,12 +51,22 @@ export async function recommendationsFor(userId: string, limit = 8): Promise<Rec
     .filter((p) => p.kind === 'dislike')
     .map((p) => p.text.toLowerCase())
 
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+  const fromDate = stay.arrivalDate && stay.arrivalDate >= tomorrow ? stay.arrivalDate : tomorrow
+  const toDate = stay.departureDate && stay.departureDate >= fromDate
+    ? stay.departureDate
+    : new Date(Date.parse(`${fromDate}T12:00:00Z`) + Math.max(stay.nights ?? 3, 1) * 86_400_000)
+      .toISOString().slice(0, 10)
+
   const activities = await activityProvider().search({
+    userId,
     destination: stay.city,
     countryCode: stay.countryCode,
     interests: likes,
     budgetLevel: stay.budgetLevel,
     partySize: stay.partySize ?? 2,
+    fromDate,
+    toDate,
     limit: 24,
   })
 
@@ -67,6 +96,7 @@ export async function recommendationsFor(userId: string, limit = 8): Promise<Rec
 
   return scored.slice(0, limit).map((entry, index) => ({
     ...entry.activity,
+    meetingPoint: demoMeetingPoint(stay, entry.activity.productCode, index),
     reason: buildReason(entry.activity, entry.matched, stay.budgetLevel),
     // Spread suggestions across the trip rather than stacking them on day one.
     suggestedDay: ((alreadyPlanned + index) % days) + 1,
