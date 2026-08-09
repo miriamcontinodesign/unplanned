@@ -4,6 +4,7 @@ import { CONCIERGE_SYSTEM } from './prompts.js'
 import { renderTravelerState } from './state.js'
 import { effort } from '../config.js'
 import { currentStay, recentMessages } from '../db/repo.js'
+import { experienceSearchTool } from '../components/index.js'
 import { weatherTool, webSearchTool } from '../tools/index.js'
 
 /**
@@ -54,7 +55,7 @@ export async function generateReply(userId: string): Promise<string> {
   const result = await runAgent({
     system: conciergeSystem(userId),
     messages: conversationMessages(userId),
-    tools: [weatherTool(userId), webSearchTool(stay)],
+    tools: [weatherTool(userId), experienceSearchTool(userId), webSearchTool(stay)],
     effort: effort.reply,
     maxIterations: 6,
   })

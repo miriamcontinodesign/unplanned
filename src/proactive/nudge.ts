@@ -10,7 +10,13 @@ import {
   nudgeCountToday,
   type User,
 } from '../db/repo.js'
-import { sendNudgeTool, weatherTool, webSearchTool, type NudgeSink } from '../tools/index.js'
+import {
+  sendNudgeTool,
+  weatherTool,
+  webSearchTool,
+  type NudgeSink,
+} from '../tools/index.js'
+import { experienceSearchTool } from '../components/index.js'
 import { isQuietHour, localTimeLabel, minutesSince } from '../util/time.js'
 
 /**
@@ -73,7 +79,12 @@ export async function considerNudge(
   await runAgent({
     system,
     messages: [{ role: 'user', content: prompt }],
-    tools: [weatherTool(user.id), webSearchTool(stay), sendNudgeTool(sink)],
+    tools: [
+      weatherTool(user.id),
+      experienceSearchTool(user.id),
+      webSearchTool(stay),
+      sendNudgeTool(sink),
+    ],
     effort: effort.nudge,
     maxIterations: 8,
   })

@@ -3,6 +3,8 @@
 A travel concierge that lives in a Telegram thread.
 It learns where you are from what you tell it, remembers the shape of your trip, and speaks up unprompted when there's something worth doing.
 
+The canonical one-minute product narrative is documented in [the demo user story](docs/demo-user-story.md).
+
 Ask it anything and it answers with your actual context in mind - where you're staying, what the weather is doing, how long you've got left, what you've already told it you hate.
 
 ## Status
@@ -17,7 +19,7 @@ What is not built yet is listed under [Not built yet](#not-built-yet).
 Every inbound message runs two model passes, deliberately separated:
 
 1. **Extraction.** A forced structured-output call reads the newest message and emits a state delta - city, lodging, dates, plans, preferences, journal entries. This is the only thing that writes trip state.
-2. **Reply.** An agentic call with weather and web search answers the traveler.
+2. **Reply.** An agentic call with weather, web search, and live Viator experience search answers the traveler.
 
 Splitting them is the point. If a single chatty call had to both answer well *and* remember to record that you just moved to Cusco, it would sometimes forget - and you'd never know until a suggestion came back for the wrong city. Extraction runs on a schema, so it can't quietly skip.
 
@@ -28,7 +30,7 @@ Telegram ──> extraction pass ──> SQLite (stays, plans, preferences, jour
                     │                         │
                     └──> reply pass <─────────┘
                               │
-                    weather + web search
+                 weather + web + Viator
 
 scheduler ──> gates ──> nudge agent ──> send_nudge? ──> Telegram
    (15m)   (quiet hours,   (weather,      (usually
@@ -45,7 +47,10 @@ scheduler ──> gates ──> nudge agent ──> send_nudge? ──> Telegram
 | `src/llm/state.ts` | How trip state is rendered for the model. |
 | `src/proactive/nudge.ts` | The deterministic gates, then the decision agent. |
 | `src/db/schema.ts` | Trip state: stays, plans, preferences, journal, nudges. |
-| `src/tools/` | `get_weather`, `web_search`, `send_nudge`. |
+| `src/tools/` | Roadio's built-in `get_weather`, `web_search`, and `send_nudge` tools. |
+| `src/components/viator.ts` | Roadio-facing Viator component and its `search_experiences` agent tool. |
+| `src/components/viator.mock.ts` | Deterministic mock experience catalog and lightweight local search. |
+| `src/services/viator.ts` | Viator MCP connection, retry policy, validation, and compact result formatting. |
 
 ## Setup
 
@@ -67,6 +72,10 @@ Then open Telegram, find your bot, and send it something like:
 > just landed in Lima, staying at a hostel in Miraflores until Sunday
 
 From then on it knows where you are.
+
+Bookable experience search uses Viator's hosted MCP endpoint and needs no separate API key. `ROADIO_VIATOR_MCP_URL` can override the endpoint if Viator changes it.
+
+For local demos and deterministic tests, set `ROADIO_VIATOR_MOCK=true`. Roadio then uses the same `search_experiences` component against a small fixture catalog—cooking classes in Brooklyn, Rome, Tokyo, and Barcelona, plus food-tour and kayaking examples—without making network calls. Mock booking links end in `example.invalid`, and mock operator contacts use reserved `+1 212 555-01xx` fictional numbers. Results mark those contacts as mock data so a downstream calling component can refuse to dial them.
 
 ## Commands
 
