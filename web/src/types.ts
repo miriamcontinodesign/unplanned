@@ -62,6 +62,13 @@ export interface Recommendation {
   freeCancellation: boolean
   reason: string
   suggestedDay: number
+  meetingPoint?: {
+    name: string
+    address: string
+    latitude: number
+    longitude: number
+    isDemo?: boolean
+  } | null
 }
 
 export interface Booking {

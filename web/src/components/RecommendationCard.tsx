@@ -31,7 +31,12 @@ export function RecommendationCard({
 
   return (
     <div className={`rec-card${status === 'added' ? ' is-added' : ''}`}>
-      <div className="rec-banner" style={{ background: gradientFor(item.productCode) }}>
+      <div
+        className={`rec-banner${item.imageUrl ? ' has-photo' : ''}`}
+        style={item.imageUrl
+          ? { backgroundImage: `linear-gradient(180deg, rgba(20, 15, 12, .08), rgba(20, 15, 12, .34)), url("${item.imageUrl}")` }
+          : { background: gradientFor(item.productCode) }}
+      >
         <div className="rec-banner-top">
           <span className="rec-pill category">{categoryFor(item.tags)}</span>
           <span className="rec-pill badge">{badge}</span>
