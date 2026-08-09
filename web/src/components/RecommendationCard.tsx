@@ -16,14 +16,14 @@ export function RecommendationCard({
   tripDays: number
   status: 'added' | 'passed' | undefined
   onAccept: (day: number) => void
-  onCall: (day: number) => Promise<'confirmed' | 'not_confirmed'>
+  onCall: (day: number) => Promise<'handed_off'>
   onPass: () => void
 }) {
   const [day, setDay] = useState(item.suggestedDay)
-  const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'confirmed' | 'not_confirmed' | 'unavailable'>('idle')
+  const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'handed_off' | 'unavailable'>('idle')
 
   const callToBook = async () => {
-    if (callStatus === 'calling' || callStatus === 'confirmed') return
+    if (callStatus === 'calling' || callStatus === 'handed_off') return
     setCallStatus('calling')
     try {
       setCallStatus(await onCall(day))
@@ -109,14 +109,13 @@ export function RecommendationCard({
             <button
               className={`btn-call is-${callStatus}`}
               onClick={() => void callToBook()}
-              disabled={callStatus === 'calling' || callStatus === 'confirmed'}
+              disabled={callStatus === 'calling' || callStatus === 'handed_off'}
             >
               <PhoneCall />
               <span>
-                {callStatus === 'calling' && 'Calling…'}
-                {callStatus === 'confirmed' && 'Booking confirmed'}
-                {callStatus === 'not_confirmed' && 'Not booked — try again'}
-                {callStatus === 'unavailable' && 'Calling unavailable — try again'}
+                {callStatus === 'calling' && 'Opening…'}
+                {callStatus === 'handed_off' && 'Opened in Concierge Line'}
+                {callStatus === 'unavailable' && 'Concierge unavailable — try again'}
                 {callStatus === 'idle' && 'Book'}
               </span>
             </button>

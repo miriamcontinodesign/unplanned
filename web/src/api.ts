@@ -42,17 +42,10 @@ export const api = {
     }),
 
   callToBook: (productCode: string, dayIndex: number) =>
-    request<{ taskId: string; status: string }>('/api/bookings/call', {
+    request<{ taskId: string; status: string; dashboardUrl: string }>('/api/bookings/call', {
       method: 'POST',
       body: JSON.stringify({ productCode, dayIndex }),
     }),
-
-  callStatus: (taskId: string) =>
-    request<{
-      status: string
-      confirmed: boolean | null
-      note: string | null
-    }>(`/api/bookings/call/${encodeURIComponent(taskId)}`),
 
   confirmedBookings: () =>
     request<{ bookings: Booking[] }>('/api/bookings/confirmed'),

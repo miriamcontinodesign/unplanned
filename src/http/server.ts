@@ -28,7 +28,7 @@ import {
 import { greeting, handleTurn, phaseFor, placeLabel } from '../onboarding/engine.js'
 import { recommendationsFor } from '../onboarding/recommend.js'
 import { activityProvider } from '../providers/index.js'
-import { bookingState, startBooking } from '../concierge/client.js'
+import { conciergeTaskUrl, createBookingTask } from '../concierge/client.js'
 
 const log = logger('http')
 
@@ -213,7 +213,7 @@ export function createServer(mutex: KeyedMutex) {
     const travelDate = new Date(Date.parse(`${baseDate}T12:00:00Z`) + (dayIndex - 1) * 86_400_000)
       .toISOString().slice(0, 10)
 
-    const taskId = await startBooking({
+    const taskId = await createBookingTask({
       venueName: activity.title,
       venueKind: 'tour',
       venueAddress: activity.meetingPoint?.address,
@@ -225,13 +225,7 @@ export function createServer(mutex: KeyedMutex) {
     })
 
     if (!taskId) return c.json({ error: 'The calling service is unavailable right now.' }, 503)
-    return c.json({ taskId, status: 'dialing' })
-  })
-
-  app.get('/api/bookings/call/:taskId', async (c) => {
-    const state = await bookingState(c.req.param('taskId'))
-    if (!state) return c.json({ error: 'The call status is unavailable.' }, 503)
-    return c.json(state)
+    return c.json({ taskId, status: 'queued', dashboardUrl: conciergeTaskUrl(taskId) })
   })
 
   app.post('/api/bookings/confirm', async (c) => {

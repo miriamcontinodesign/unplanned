@@ -20,6 +20,26 @@ npm run web:dev    # SPA on :5173, proxies /api to :8787
 
 Open http://localhost:5173 and say "Lisbon for 5 days". No API keys needed for the web flow.
 
+### Phone booking
+
+The recommendation-card **Book** action creates a queued task in the bundled
+`concierge-line` service and opens that task in its dashboard. Concierge Line
+then owns starting the outbound call, showing its transcript, and presenting
+the booking result. Run it alongside Roadio:
+
+```bash
+cd concierge-line
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Roadio connects through `CONCIERGE_LINE_URL`, which defaults to
+`http://127.0.0.1:8000`. Without telephony credentials the service performs a
+scripted fake call through the same task and polling flow. For live calls, add
+the ElevenLabs/Twilio settings described in
+[`concierge-line/SETUP-human.md`](concierge-line/SETUP-human.md).
+
 ## How it works
 
 Every inbound message runs two model passes, deliberately separated:
