@@ -94,14 +94,10 @@ export function createServer(mutex: KeyedMutex) {
     if (!stay) return c.json({ recommendations: [], phase: 'need_destination' })
 
     const recommendations = await recommendationsFor(user.id)
-    const provider = activityProvider()
     return c.json({
-      recommendations: recommendations.map((recommendation) => ({
-        ...recommendation,
-        instantBookAvailable: provider.bookingMode === 'in_app',
-      })),
+      recommendations,
       phase: phaseFor(stay),
-      sampleData: provider.isSample,
+      sampleData: activityProvider().isSample,
     })
   })
 

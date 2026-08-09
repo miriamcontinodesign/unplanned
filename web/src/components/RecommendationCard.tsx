@@ -16,7 +16,7 @@ export function RecommendationCard({
   tripDays: number
   status: 'added' | 'passed' | undefined
   onAccept: (day: number) => void
-  onCall: (day: number, instantBookAvailable: boolean) => Promise<'confirmed' | 'not_confirmed'>
+  onCall: (day: number) => Promise<'confirmed' | 'not_confirmed'>
   onPass: () => void
 }) {
   const [day, setDay] = useState(item.suggestedDay)
@@ -26,7 +26,7 @@ export function RecommendationCard({
     if (callStatus === 'calling' || callStatus === 'confirmed') return
     setCallStatus('calling')
     try {
-      setCallStatus(await onCall(day, Boolean(item.instantBookAvailable)))
+      setCallStatus(await onCall(day))
     } catch {
       setCallStatus('unavailable')
     }
@@ -113,11 +113,11 @@ export function RecommendationCard({
             >
               <PhoneCall />
               <span>
-                {callStatus === 'calling' && (item.instantBookAvailable ? 'Booking…' : 'Calling…')}
+                {callStatus === 'calling' && 'Calling…'}
                 {callStatus === 'confirmed' && 'Booking confirmed'}
                 {callStatus === 'not_confirmed' && 'Not booked — try again'}
                 {callStatus === 'unavailable' && 'Calling unavailable — try again'}
-                {callStatus === 'idle' && (item.instantBookAvailable ? 'Book instantly' : 'Call to book')}
+                {callStatus === 'idle' && 'Book'}
               </span>
             </button>
           </div>

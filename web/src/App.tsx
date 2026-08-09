@@ -88,14 +88,7 @@ export default function App() {
     }
   }
 
-  const callToBook = async (productCode: string, day: number, instantBookAvailable: boolean) => {
-    if (instantBookAvailable) {
-      const result = await api.book(productCode)
-      setSnapshot(result)
-      showToast('Booking confirmed')
-      return 'confirmed' as const
-    }
-
+  const callToBook = async (productCode: string, day: number) => {
     const call = await api.callToBook(productCode, day)
     showToast('Calling now — we’ll ask about availability')
     const deadline = Date.now() + 5 * 60_000

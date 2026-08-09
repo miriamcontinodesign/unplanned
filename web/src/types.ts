@@ -63,7 +63,6 @@ export interface Recommendation {
   freeCancellation: boolean
   reason: string
   suggestedDay: number
-  instantBookAvailable?: boolean
   meetingPoint?: {
     name: string
     address: string
