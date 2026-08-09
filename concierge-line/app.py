@@ -10,6 +10,7 @@ main dashboard can consume this module without touching Python.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -311,13 +312,20 @@ async def submit_reservation(
     """
     _require_secret(secret)
 
+    raw = await request.body()
     try:
-        body = await request.json()
+        body = json.loads(raw)
     except (ValueError, UnicodeDecodeError):
         body = {}
 
+    # Log the raw body: ElevenLabs' outgoing webhook-tool envelope is
+    # undocumented, so the first live call is what tells us the real shape.
+    # unwrap_tool_body already handles both, but if something is off this is
+    # the line that says why in five seconds instead of five minutes.
+    print(f"[reserve] raw={raw[:600].decode('utf-8', 'replace')}")
+
     payload = agents.unwrap_tool_body(body)
-    print(f"[reserve] keys={sorted(payload)}")
+    print(f"[reserve] parsed keys={sorted(payload)}")
 
     # The note is written by post_reservation_hook, so it lands whichever
     # path produced the result.
@@ -440,8 +448,6 @@ async def _backstop_extract(task_id: str) -> None:
         return
     text = "".join(block.text for block in message.content if block.type == "text").strip()
     try:
-        import json
-
         extracted = json.loads(text)
     except ValueError:
         print("[backstop] model returned unparseable JSON")

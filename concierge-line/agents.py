@@ -192,6 +192,13 @@ def apply_reservation(payload: dict[str, Any]) -> tuple[dict[str, Any] | None, s
     this one function by design.
     """
     task_id = str(payload.get("task_id") or "").strip()
+
+    # doctor.py probes this endpoint through the tunnel. Without this guard the
+    # in-flight fallback below would attribute the probe to a real call and
+    # wipe its result.
+    if task_id == "__preflight__":
+        return None, "Preflight acknowledged."
+
     task = store.get(task_id)
     if task is None:
         # Fall back to the only in-flight call, if there is exactly one. A
