@@ -32,7 +32,6 @@ export default function App() {
   const [picksLoading, setPicksLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [linkCode, setLinkCode] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
 
@@ -184,15 +183,6 @@ export default function App() {
     }
   }
 
-  const getLinkCode = async () => {
-    try {
-      const result = await api.linkCode()
-      setLinkCode(result.code)
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
   // Demo convenience: drop the session and reload as a brand new traveler.
   const reset = async () => {
     try {
@@ -248,15 +238,6 @@ export default function App() {
         <button className="masthead-reset" onClick={reset} title="Reset demo" aria-label="Reset">
           <RefreshCw />
         </button>
-        {snapshot.user.linked ? (
-          <div className="linked-chip">Telegram linked</div>
-        ) : linkCode ? (
-          <div className="linked-chip code">{linkCode}</div>
-        ) : (
-          <button className="linked-chip button" onClick={getLinkCode}>
-            Link Telegram
-          </button>
-        )}
       </header>
 
       {sampleData && (
