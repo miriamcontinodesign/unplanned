@@ -57,6 +57,16 @@ export async function recommendationsFor(
     .filter((p) => p.kind === 'dislike')
     .map((p) => p.text.toLowerCase())
 
+  // Viator requires a participation window. Use the trip dates when they are
+  // still actionable; otherwise open a short window beginning tomorrow so a
+  // location-only trip can still produce cards.
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+  const fromDate = stay.arrivalDate && stay.arrivalDate >= tomorrow ? stay.arrivalDate : tomorrow
+  const toDate = stay.departureDate && stay.departureDate >= fromDate
+    ? stay.departureDate
+    : new Date(Date.parse(`${fromDate}T12:00:00Z`) + Math.max(stay.nights ?? 3, 1) * 86_400_000)
+      .toISOString().slice(0, 10)
+
   const activities = await activityProvider().search({
     userId,
     destination: stay.city,
@@ -64,6 +74,8 @@ export async function recommendationsFor(
     interests: likes,
     budgetLevel: stay.budgetLevel,
     partySize: stay.partySize ?? 2,
+    fromDate,
+    toDate,
     limit: 24,
   })
 
