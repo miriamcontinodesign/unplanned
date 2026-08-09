@@ -8,11 +8,12 @@ import {
   type Stay,
 } from '../db/repo.js'
 import { parseTurn } from './parse.js'
+import type { GeoResult } from '../services/geocode.js'
 import { logger } from '../util/log.js'
 
 const log = logger('onboarding')
 
-export type Phase = 'need_destination' | 'need_days' | 'ready'
+export type Phase = 'need_destination' | 'ready'
 
 export interface TurnResult {
   reply: string
@@ -21,13 +22,42 @@ export interface TurnResult {
 }
 
 export function phaseFor(stay: Stay | undefined): Phase {
-  if (!stay) return 'need_destination'
-  if (!stay.nights) return 'need_days'
-  return 'ready'
+  return stay ? 'ready' : 'need_destination'
 }
 
 export function greeting(): string {
-  return "Where are you headed? Tell me the place and how long you've got - something like \"Lisbon for 5 days\" is plenty."
+  return "What are you up to? Tell me what you're in the mood for and where you are, and I'll take it from there."
+}
+
+/**
+ * Write a resolved place to trip memory. Shared by the chat turn below and by
+ * the silent location endpoint - detecting a location shouldn't itself count
+ * as a conversational turn, it just resolves the same field a chat message
+ * would have.
+ */
+export function applyDestination(userId: string, geo: GeoResult): Stay {
+  const stay = upsertCurrentStay(userId, {
+    city: geo.name,
+    country: geo.country,
+    countryCode: geo.countryCode,
+    region: geo.region,
+    latitude: geo.latitude,
+    longitude: geo.longitude,
+    timezone: geo.timezone,
+  })
+
+  if (stay.latitude === null) {
+    setStayGeo(stay.id, {
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      timezone: geo.timezone,
+      region: geo.region,
+      country: geo.country,
+      countryCode: geo.countryCode,
+    })
+  }
+
+  return stay
 }
 
 /**
@@ -48,27 +78,8 @@ export async function handleTurn(userId: string, message: string): Promise<TurnR
     const geo = parsed.destination
     const isNewCity = !before || before.city.toLowerCase() !== geo.name.toLowerCase()
 
-    const stay = upsertCurrentStay(userId, {
-      city: geo.name,
-      country: geo.country,
-      countryCode: geo.countryCode,
-      region: geo.region,
-      latitude: geo.latitude,
-      longitude: geo.longitude,
-      timezone: geo.timezone,
-      ...(parsed.days ? { nights: parsed.days } : {}),
-    })
-
-    if (stay.latitude === null) {
-      setStayGeo(stay.id, {
-        latitude: geo.latitude,
-        longitude: geo.longitude,
-        timezone: geo.timezone,
-        region: geo.region,
-        country: geo.country,
-        countryCode: geo.countryCode,
-      })
-    }
+    const stay = applyDestination(userId, geo)
+    if (parsed.days) upsertCurrentStay(userId, { city: stay.city, nights: parsed.days })
     if (isNewCity) learned.push(placeLabel(geo.name, geo.country))
   } else if (parsed.days && before) {
     upsertCurrentStay(userId, { city: before.city, nights: parsed.days })
@@ -113,27 +124,21 @@ function composeReply(input: {
     if (parsed.unresolvedPlace) {
       return `I couldn't find "${parsed.unresolvedPlace}" on the map. Try the city name on its own - "Porto", say, or "Mexico City".`
     }
-    if (parsed.days) {
-      return `${parsed.days} days, got it. Where are you going?`
+    if (parsed.interests.length > 0) {
+      return `Noted that you're into ${humanList(parsed.interests)}. Which city are you in, so I can find things nearby?`
     }
-    return "I need a destination first. Which city are you headed to?"
+    return 'Which city are you in?'
   }
 
   const place = stay ? placeLabel(stay.city, stay.country) : 'there'
-
-  if (phase === 'need_days') {
-    return `${place} - good one. How many days have you got there?`
-  }
-
-  const nights = stay?.nights ?? 0
-  const bits: string[] = [`${place} for ${nights} ${nights === 1 ? 'day' : 'days'}.`]
+  const bits: string[] = [`${place} - got it.`]
 
   const interests = parsed.interests
   if (interests.length > 0) {
     bits.push(`Noted that you're into ${humanList(interests)}.`)
   }
 
-  bits.push("I've pulled together some things worth doing - keep the ones you like and I'll build the itinerary around them.")
+  bits.push('Pick a time of day and I’ll pull together things worth doing right now.')
 
   return bits.join(' ')
 }

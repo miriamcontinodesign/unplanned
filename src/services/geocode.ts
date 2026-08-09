@@ -63,3 +63,31 @@ export async function geocode(place: string): Promise<GeoResult | null> {
     return null
   }
 }
+
+/**
+ * IANA timezone for known coordinates. Used when a location is already
+ * resolved (e.g. reverse-geocoded from the browser's own GPS/WiFi fix) and
+ * only the timezone is still needed - re-searching by the place's name would
+ * be a second, independent geocode that can land on an unrelated place
+ * sharing that name, rather than confirming the one we already have.
+ */
+export async function timezoneFor(latitude: number, longitude: number): Promise<string> {
+  const url = new URL('https://api.open-meteo.com/v1/forecast')
+  url.searchParams.set('latitude', String(latitude))
+  url.searchParams.set('longitude', String(longitude))
+  url.searchParams.set('timezone', 'auto')
+  url.searchParams.set('forecast_days', '1')
+
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+    if (!response.ok) {
+      log.warn(`timezone lookup for ${latitude},${longitude} failed with HTTP ${response.status}`)
+      return 'UTC'
+    }
+    const body = (await response.json()) as { timezone?: string }
+    return body.timezone ?? 'UTC'
+  } catch (error) {
+    log.warn(`timezone lookup for ${latitude},${longitude} threw`, describeError(error))
+    return 'UTC'
+  }
+}

@@ -3,12 +3,12 @@ import path from 'node:path'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
-import { getCookie, setCookie } from 'hono/cookie'
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { config } from '../config.js'
 import { describeError, logger } from '../util/log.js'
+import { localHour } from '../util/time.js'
 import type { KeyedMutex } from '../util/mutex.js'
 import {
-  addMessage,
   addPlan,
   createBooking,
   createLinkCode,
@@ -20,27 +20,32 @@ import {
   listOpenPlans,
   listPreferences,
   recentMessages,
-  resetTraveler,
   setPlanStatus,
   updateBooking,
   type User,
 } from '../db/repo.js'
-import { greeting, handleTurn, phaseFor, placeLabel } from '../onboarding/engine.js'
-import { recommendationsFor } from '../onboarding/recommend.js'
+import { applyDestination, greeting, handleTurn, phaseFor, placeLabel } from '../onboarding/engine.js'
+import { recommendationsFor, slotForHour, type TimeOfDay } from '../onboarding/recommend.js'
 import { activityProvider } from '../providers/index.js'
 import { conciergeTaskUrl, createBookingTask } from '../concierge/client.js'
+import { timezoneFor } from '../services/geocode.js'
 
 const log = logger('http')
 
 const SESSION_COOKIE = 'roadio_session'
 
-/**
- * Seed a transcript with the assistant's opening question. It is a real first
- * turn rather than UI chrome, so it survives a reload and stays in the log once
- * the traveler answers.
- */
-function openConversation(userId: string): void {
-  addMessage(userId, 'assistant', greeting())
+const TIME_SLOTS: TimeOfDay[] = ['morning', 'afternoon', 'evening', 'night']
+
+function parseSlot(value: string | undefined): TimeOfDay | undefined {
+  return TIME_SLOTS.includes(value as TimeOfDay) ? (value as TimeOfDay) : undefined
+}
+
+/** Roughly when each slot happens, for the concierge call script. */
+const SLOT_TIMES: Record<TimeOfDay, string> = {
+  morning: '09:30',
+  afternoon: '14:00',
+  evening: '18:30',
+  night: '21:00',
 }
 
 /** Typed context so `c.get('user')` is a User rather than unknown. */
@@ -59,7 +64,6 @@ export function createServer(mutex: KeyedMutex) {
     if (!user) {
       user = createUser()
       const fresh = createSession(user.id)
-      openConversation(user.id)
       setCookie(c, SESSION_COOKIE, fresh, {
         httpOnly: true,
         sameSite: 'Lax',
@@ -86,6 +90,14 @@ export function createServer(mutex: KeyedMutex) {
     return c.json(snapshot(user))
   })
 
+  // Demo convenience: drop the session so the next request mints a brand new
+  // traveler. The old user row is left in place rather than deleted - cheap
+  // to keep, and deleting it here would race any request already in flight.
+  app.post('/api/reset', (c) => {
+    deleteCookie(c, SESSION_COOKIE, { path: '/' })
+    return c.json({ ok: true })
+  })
+
   app.post('/api/chat', async (c) => {
     const user = c.get('user')
     const body = await c.req.json<{ message?: string }>().catch(() => ({}) as { message?: string })
@@ -100,17 +112,42 @@ export function createServer(mutex: KeyedMutex) {
     return c.json({ reply: result.reply, ...snapshot(user) })
   })
 
-  app.post('/api/reset', async (c) => {
+  // Resolves a detected location silently - it is not a conversational turn,
+  // so it writes no message and generates no reply. Letting the traveler type
+  // their own first message (instead of manufacturing one from the city name)
+  // is the whole point of this endpoint.
+  app.post('/api/location', async (c) => {
     const user = c.get('user')
+    const body = await c.req.json<{
+      city?: string
+      country?: string | null
+      countryCode?: string | null
+      region?: string | null
+      latitude?: number
+      longitude?: number
+    }>().catch(() => ({}) as Record<string, never>)
 
-    // Same lock as a chat turn: a reset landing mid-turn would otherwise wipe
-    // the state that turn is about to write into.
-    await mutex.run(user.id, async () => {
-      resetTraveler(user.id)
-      openConversation(user.id)
+    const city = body.city?.trim()
+    const { latitude, longitude } = body
+    if (!city || typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return c.json({ error: 'city, latitude and longitude are required.' }, 400)
+    }
+
+    // The coordinates are already known (the browser's own fix, reverse-
+    // geocoded client-side) - only the timezone still needs resolving. A
+    // second, name-based geocode here could match an unrelated place that
+    // happens to share the city's name, rather than confirming this one.
+    const timezone = await timezoneFor(latitude, longitude)
+
+    applyDestination(user.id, {
+      name: city,
+      latitude,
+      longitude,
+      timezone,
+      region: body.region ?? null,
+      country: body.country ?? null,
+      countryCode: body.countryCode ?? null,
     })
-
-    log.info(`traveler ${user.id} started a new trip`)
     return c.json(snapshot(user))
   })
 
@@ -119,36 +156,37 @@ export function createServer(mutex: KeyedMutex) {
     const stay = currentStay(user.id)
     if (!stay) return c.json({ recommendations: [], phase: 'need_destination' })
 
-    const recommendations = await recommendationsFor(user.id)
+    // The picker drives this once the traveler has touched it; until then the
+    // clock in their own timezone picks a sensible slot to open on.
+    const slot = parseSlot(c.req.query('slot')) ?? slotForHour(localHour(stay.timezone))
+    const recommendations = await recommendationsFor(user.id, slot)
+
     return c.json({
       recommendations,
+      slot,
       phase: phaseFor(stay),
       sampleData: activityProvider().isSample,
     })
   })
 
-  // --- itinerary -------------------------------------------------------------
+  // --- activities --------------------------------------------------------------
+  // No day-by-day itinerary: accepting or passing just tells the recommender
+  // what's decided, so it stops resurfacing the same thing today.
 
-  app.post('/api/itinerary/accept', async (c) => {
+  app.post('/api/activities/accept', async (c) => {
     const user = c.get('user')
-    const body = await c.req.json<{
-      productCode?: string
-      dayIndex?: number
-    }>()
-
+    const body = await c.req.json<{ productCode?: string; timeOfDay?: string }>()
     if (!body.productCode) return c.json({ error: 'productCode is required.' }, 400)
 
     const activity = await activityProvider().get(body.productCode)
     if (!activity) return c.json({ error: 'That activity is no longer listed.' }, 404)
 
-    const stay = currentStay(user.id)
-    const days = Math.max(stay?.nights ?? 3, 1)
-    const dayIndex = clamp(body.dayIndex ?? 1, 1, days)
+    const slot = parseSlot(body.timeOfDay)
 
     addPlan(user.id, {
       title: activity.title,
       detail: activity.summary,
-      dayIndex,
+      atTime: slot ?? null,
       provider: activity.provider,
       productCode: activity.productCode,
       priceAmount: activity.fromPrice.amount,
@@ -157,10 +195,10 @@ export function createServer(mutex: KeyedMutex) {
       status: 'idea',
     })
 
-    return c.json(snapshot(user))
+    return c.json({ ok: true })
   })
 
-  app.post('/api/itinerary/pass', async (c) => {
+  app.post('/api/activities/pass', async (c) => {
     const user = c.get('user')
     const body = await c.req.json<{ productCode?: string }>()
     if (!body.productCode) return c.json({ error: 'productCode is required.' }, 400)
@@ -177,15 +215,33 @@ export function createServer(mutex: KeyedMutex) {
       status: 'dropped',
     })
 
-    return c.json(snapshot(user))
+    return c.json({ ok: true })
   })
 
-  app.post('/api/itinerary/:id/remove', (c) => {
+  // A recap of what's been said yes to today - not an itinerary, just a flat
+  // list, since the whole point of this app is not planning multiple days.
+  app.get('/api/activities', (c) => {
+    const user = c.get('user')
+    const picks = listOpenPlans(user.id).map((p) => ({
+      id: p.id,
+      title: p.title,
+      detail: p.detail,
+      atTime: p.atTime,
+      provider: p.provider,
+      productCode: p.productCode,
+      priceAmount: p.priceAmount,
+      currency: p.currency,
+      durationMinutes: p.durationMinutes,
+    }))
+    return c.json({ picks })
+  })
+
+  app.post('/api/activities/:id/remove', (c) => {
     const user = c.get('user')
     const id = Number.parseInt(c.req.param('id'), 10)
-    if (!Number.isFinite(id)) return c.json({ error: 'Bad itinerary id.' }, 400)
+    if (!Number.isFinite(id)) return c.json({ error: 'Bad activity id.' }, 400)
     setPlanStatus(user.id, id, 'dropped')
-    return c.json(snapshot(user))
+    return c.json({ ok: true })
   })
 
   // --- booking --------------------------------------------------------------
@@ -199,26 +255,24 @@ export function createServer(mutex: KeyedMutex) {
 
   app.post('/api/bookings/call', async (c) => {
     const user = c.get('user')
-    const body: { productCode?: string; dayIndex?: number } = await c.req.json().catch(() => ({}))
+    const body: { productCode?: string; timeOfDay?: string } = await c.req.json().catch(() => ({}))
     if (!body.productCode) return c.json({ error: 'productCode is required.' }, 400)
 
     const activity = await activityProvider().get(body.productCode)
     if (!activity) return c.json({ error: 'That activity is no longer listed.' }, 404)
 
+    // No day-by-day itinerary here - this app is about today. The call asks
+    // about right now, at roughly whichever part of the day was picked.
     const stay = currentStay(user.id)
-    const dayIndex = Math.max(body.dayIndex ?? 1, 1)
-    const baseDate = stay?.arrivalDate && /^\d{4}-\d{2}-\d{2}$/.test(stay.arrivalDate)
-      ? stay.arrivalDate
-      : new Date().toISOString().slice(0, 10)
-    const travelDate = new Date(Date.parse(`${baseDate}T12:00:00Z`) + (dayIndex - 1) * 86_400_000)
-      .toISOString().slice(0, 10)
+    const slot = parseSlot(body.timeOfDay) ?? (stay ? slotForHour(localHour(stay.timezone)) : 'evening')
+    const travelDate = new Date().toISOString().slice(0, 10)
 
     const taskId = await createBookingTask({
       venueName: activity.title,
       venueKind: 'tour',
       venueAddress: activity.meetingPoint?.address,
       date: travelDate,
-      time: '18:00',
+      time: SLOT_TIMES[slot],
       partySize: Math.max(stay?.partySize ?? 1, 1),
       travelerName: user.displayName,
       notes: 'Please ask about availability and how to complete the booking.',
@@ -318,7 +372,7 @@ export function createServer(mutex: KeyedMutex) {
         travelDate,
         partySize,
         traveler: {
-          firstName: user.displayName?.split(/\s+/)[0] || 'Roadio',
+          firstName: user.displayName?.split(/\s+/)[0] || 'Unplanned',
           lastName: user.displayName?.split(/\s+/).slice(1).join(' ') || 'Traveler',
           // The fixture provider does not contact this address. A real provider
           // must collect and validate traveler details before this step.
@@ -383,24 +437,21 @@ export function createServer(mutex: KeyedMutex) {
 /** Everything the frontend needs to render, in one payload. */
 function snapshot(user: User) {
   const stay = currentStay(user.id)
-  const plans = listOpenPlans(user.id)
-  const days = Math.max(stay?.nights ?? 0, 0)
 
   return {
     user: { id: user.id, linked: Boolean(user.telegramChatId) },
     phase: phaseFor(stay),
+    greeting: greeting(),
     trip: stay
       ? {
           city: stay.city,
           country: stay.country,
           label: placeLabel(stay.city, stay.country),
-          days: stay.nights,
           timezone: stay.timezone,
           budgetLevel: stay.budgetLevel,
           partySize: stay.partySize,
         }
       : null,
-    itinerary: buildItinerary(plans, days),
     preferences: listPreferences(user.id).map((p) => ({ id: p.id, kind: p.kind, text: p.text })),
     messages: recentMessages(user.id, 50).map((m) => ({
       role: m.role,
@@ -408,43 +459,6 @@ function snapshot(user: User) {
       at: m.createdAt,
     })),
   }
-}
-
-/** Group accepted items into day buckets - the structured flow map. */
-function buildItinerary(plans: ReturnType<typeof listOpenPlans>, days: number) {
-  const dayCount = days > 0 ? days : Math.max(...plans.map((p) => p.dayIndex ?? 1), 1)
-
-  const buckets = Array.from({ length: dayCount }, (_, index) => ({
-    day: index + 1,
-    items: [] as Array<{
-      id: number
-      title: string
-      detail: string | null
-      durationMinutes: number | null
-      priceAmount: number | null
-      currency: string | null
-      productCode: string | null
-    }>,
-  }))
-
-  for (const plan of plans) {
-    const day = clamp(plan.dayIndex ?? 1, 1, dayCount)
-    buckets[day - 1]!.items.push({
-      id: plan.id,
-      title: plan.title,
-      detail: plan.detail,
-      durationMinutes: plan.durationMinutes,
-      priceAmount: plan.priceAmount,
-      currency: plan.currency,
-      productCode: plan.productCode,
-    })
-  }
-
-  return buckets
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
 }
 
 export function startServer(mutex: KeyedMutex): () => void {

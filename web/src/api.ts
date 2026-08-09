@@ -1,4 +1,5 @@
-import type { Booking, CancelledBooking, Recommendation, Snapshot } from './types'
+import type { DetectedPlace } from './geolocate'
+import type { PickItem, Recommendation, Snapshot, TimeOfDay } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -24,45 +25,47 @@ export const api = {
       body: JSON.stringify({ message }),
     }),
 
-  reset: () => request<Snapshot>('/api/reset', { method: 'POST' }),
-
-  recommendations: () =>
-    request<{ recommendations: Recommendation[]; sampleData?: boolean }>('/api/recommendations'),
-
-  accept: (productCode: string, dayIndex: number) =>
-    request<Snapshot>('/api/itinerary/accept', {
+  setLocation: (place: DetectedPlace) =>
+    request<Snapshot>('/api/location', {
       method: 'POST',
-      body: JSON.stringify({ productCode, dayIndex }),
+      body: JSON.stringify({
+        city: place.city,
+        country: place.country,
+        countryCode: place.countryCode,
+        region: place.region,
+        latitude: place.latitude,
+        longitude: place.longitude,
+      }),
     }),
 
-  book: (productCode: string) =>
-    request<Snapshot & { booking: Booking; checkoutRequired?: boolean }>('/api/bookings/confirm', {
-      method: 'POST',
-      body: JSON.stringify({ productCode }),
-    }),
+  recommendations: (slot?: TimeOfDay) =>
+    request<{ recommendations: Recommendation[]; slot: TimeOfDay; sampleData?: boolean }>(
+      `/api/recommendations${slot ? `?slot=${slot}` : ''}`,
+    ),
 
-  callToBook: (productCode: string, dayIndex: number) =>
-    request<{ taskId: string; status: string; dashboardUrl: string }>('/api/bookings/call', {
+  accept: (productCode: string, timeOfDay: TimeOfDay) =>
+    request<{ ok: true }>('/api/activities/accept', {
       method: 'POST',
-      body: JSON.stringify({ productCode, dayIndex }),
-    }),
-
-  confirmedBookings: () =>
-    request<{ bookings: Booking[] }>('/api/bookings/confirmed'),
-
-  cancelBooking: (id: string) =>
-    request<Snapshot & { booking: CancelledBooking }>(`/api/bookings/${id}/cancel`, {
-      method: 'POST',
+      body: JSON.stringify({ productCode, timeOfDay }),
     }),
 
   pass: (productCode: string) =>
-    request<Snapshot>('/api/itinerary/pass', {
+    request<{ ok: true }>('/api/activities/pass', {
       method: 'POST',
       body: JSON.stringify({ productCode }),
     }),
 
-  remove: (id: number) =>
-    request<Snapshot>(`/api/itinerary/${id}/remove`, { method: 'POST' }),
+  callToBook: (productCode: string, timeOfDay: TimeOfDay) =>
+    request<{ taskId: string; status: string; dashboardUrl: string }>('/api/bookings/call', {
+      method: 'POST',
+      body: JSON.stringify({ productCode, timeOfDay }),
+    }),
 
   linkCode: () => request<{ code: string; expiresAt: string }>('/api/link/code', { method: 'POST' }),
+
+  reset: () => request<{ ok: true }>('/api/reset', { method: 'POST' }),
+
+  picks: () => request<{ picks: PickItem[] }>('/api/activities'),
+
+  removePick: (id: number) => request<{ ok: true }>(`/api/activities/${id}/remove`, { method: 'POST' }),
 }

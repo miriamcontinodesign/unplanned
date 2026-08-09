@@ -256,7 +256,7 @@ async function main(): Promise<void> {
   )
   check(
     'confirmed booking is removed from fresh suggestions',
-    !(await recommendationsFor(userId)).some(
+    !(await recommendationsFor(userId, 'afternoon')).some(
       (recommendation) => recommendation.productCode === productToBook.productCode,
     ),
   )

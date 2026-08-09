@@ -45,7 +45,7 @@ export function createBot(botToken: string, mutex: KeyedMutex) {
     const user = ensureUser(ctx)
     await ctx.reply(
       [
-        "I'm Roadio. Tell me where you are and I'll keep track of your trip.",
+        "I'm Unplanned. Tell me where you are and I'll keep track of your trip.",
         '',
         'Something like "just landed in Lima, staying in Miraflores until Sunday" is enough to get going. From then on I know where you are, so ask me anything - and I\'ll message you unprompted when something is genuinely worth doing.',
         '',
