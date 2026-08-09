@@ -1,1 +1,2 @@
-Hi, this is an AI assistant calling on behalf of {{traveler_name}} — I'm hoping to make a booking for {{party_size}} on {{date_pretty}}. Do you have a quick moment?
+Hi, is this {{venue_name}}? This is an AI assistant calling on behalf of {{traveler_name}} — I'd like to book {{party_size}} for {{date_pretty}} at {{time_pretty}}, if you have a quick moment?
+

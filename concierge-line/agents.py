@@ -431,6 +431,40 @@ def transcript_from_conversation(data: dict[str, Any]) -> list[dict[str, Any]]:
     return turns
 
 
+def reservation_from_analysis(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Read ElevenLabs' own post-call data collection.
+
+    Configured on the agent (Analysis -> Data collection), ElevenLabs extracts
+    named fields from the transcript after the call and returns them here. It
+    needs no webhook and no public tunnel, which makes it the way the card
+    fills when ngrok is not in play - and a second source when it is.
+
+    Entries look like {"field": {"value": ..., "rationale": ...}}; the list
+    form carries the same values under an "identifier" key.
+    """
+    analysis = data.get("analysis") or {}
+    collected = analysis.get("data_collection_results")
+
+    flat: dict[str, Any] = {}
+    if isinstance(collected, dict) and collected:
+        for name, entry in collected.items():
+            flat[name] = entry.get("value") if isinstance(entry, dict) else entry
+    elif isinstance(listed := analysis.get("data_collection_results_list"), list):
+        for entry in listed:
+            if isinstance(entry, dict) and (name := entry.get("identifier") or entry.get("name")):
+                flat[name] = entry.get("value")
+
+    # Only the fields we know how to place; anything else the agent collects is
+    # ignored rather than guessed at.
+    known = {
+        "reservation_confirmed", "confirmed_time", "party_size",
+        "name_on_reservation", "confirmation_code", "price", "check_in",
+        "alternatives_offered", "special_requests_status", "confidence", "notes",
+    }
+    payload = {k: v for k, v in flat.items() if k in known and v not in (None, "")}
+    return payload or None
+
+
 def reservation_from_conversation(data: dict[str, Any]) -> dict[str, Any] | None:
     """Recover the agent's submit_reservation arguments from the transcript.
 
@@ -455,6 +489,37 @@ def reservation_from_conversation(data: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
+_DAYS = "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"
+_MONTHS = ("January|February|March|April|May|June|July|August|September"
+           "|October|November|December")
+
+# One alternation, one pass. Separate passes overlap - "8:00 PM" gets bolted
+# by the clock-time rule and then "00 PM" again by the bare-hour rule, giving
+# "**8:**00 PM****". Longest and most specific alternatives come first so they
+# win the match.
+_EMPHASIS = (
+    rf"\b(?:{_DAYS}),?\s+(?:{_MONTHS})\s+\d{{1,2}}(?:st|nd|rd|th)?\b"   # Friday, August 21st
+    r"|\b\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)\b"                             # 8:00 PM
+    r"|\b\d{1,2}\s?(?:AM|PM)\b"                                         # 7 PM
+    r"|(?<=code )\d{3,8}\b|(?<=code is )\d{3,8}\b"                      # a read-out reference
+    r"|(?<=number )\d{3,8}\b|(?<=number is )\d{3,8}\b"
+    r"|(?<=reference )\d{3,8}\b|(?<=reference is )\d{3,8}\b"
+)
+
+
+def emphasise(text: str) -> str:
+    """Bold the few facts a traveler acts on: the date, the time, the reference.
+
+    Derived from the text, never added to it - this only wraps spans already
+    present. Deliberately narrow: a reference number is bolded only where it
+    was introduced as one, so ordinary numbers in the prose are left alone,
+    and bolding everything would be the same as bolding nothing.
+    """
+    import re as _re
+
+    return _re.sub(_EMPHASIS, lambda m: f"**{m.group(0)}**", text)
+
+
 async def sync_from_elevenlabs(task_id: str) -> bool:
     """Pull one snapshot of a call into the task. Returns True when it settled."""
     task = store.get(task_id)
@@ -473,8 +538,24 @@ async def sync_from_elevenlabs(task_id: str) -> bool:
         current["transcript"] = turns
         store.save()
 
-    if (payload := reservation_from_conversation(data)) is not None and current.get("result") is None:
-        apply_reservation({**payload, "task_id": task_id})
+    # The agent's own tool call is the best source - it is what the agent says
+    # it confirmed. ElevenLabs' post-call extraction is the fallback, and the
+    # only source when no tool is registered or no tunnel exists.
+    if current.get("result") is None:
+        payload = reservation_from_conversation(data) or reservation_from_analysis(data)
+        if payload is not None:
+            apply_reservation({**payload, "task_id": task_id})
+
+    # Their post-call summary is free and needs no key. It is a decent note
+    # when Anthropic is not configured, and better than an empty card.
+    # Re-apply on every sync when we are the author: `summary` is the raw text
+    # from ElevenLabs each time, so emphasise never runs over its own output.
+    # A note written by Claude or the template is left alone.
+    summary = ((data.get("analysis") or {}).get("transcript_summary") or "").strip()
+    if summary and current.get("summary_source") in (None, "elevenlabs"):
+        current["summary_markdown"] = emphasise(summary)
+        current["summary_source"] = "elevenlabs"
+        store.save()
 
     status = data.get("status")
     if status not in {"done", "failed"}:
