@@ -16,6 +16,8 @@ import path from 'node:path'
 // Point the app at a scratch database before anything imports the config.
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'roadio-smoke-'))
 process.env.ROADIO_DB_PATH = path.join(scratch, 'smoke.db')
+process.env.TELEGRAM_BOT_TOKEN ??= 'smoke-test-placeholder'
+process.env.ROADIO_VIATOR_MOCK = 'true'
 
 const { runMigrations } = await import('../src/db/index.js')
 const repo = await import('../src/db/repo.js')
@@ -24,8 +26,11 @@ const { conversationMessages } = await import('../src/llm/reply.js')
 const { skipReason } = await import('../src/proactive/nudge.js')
 const { geocode } = await import('../src/services/geocode.js')
 const { formatForecast, getForecast } = await import('../src/services/weather.js')
+const { experienceSearchTool } = await import('../src/components/index.js')
+const { searchMockExperiences } = await import('../src/components/viator.mock.js')
 const { activityProvider } = await import('../src/providers/index.js')
 const { weatherTool, webSearchTool } = await import('../src/tools/index.js')
+const { formatExperienceResults, viatorSessionId } = await import('../src/services/viator.js')
 const { isQuietHour } = await import('../src/util/time.js')
 const { KeyedMutex } = await import('../src/util/mutex.js')
 
@@ -245,6 +250,65 @@ async function main(): Promise<void> {
   }
   check('search country is ISO alpha-2', search.definition.user_location?.country === 'PE')
   check('search timezone is IANA', search.definition.user_location?.timezone === 'America/Lima')
+
+  const experiences = experienceSearchTool(userId)
+  check(
+    'experience search exposes required date fields',
+    (experiences.definition as { input_schema: { required: string[] } }).input_schema.required
+      .join(',') === 'searchTerm,startDate,endDate',
+  )
+  check('Viator session id is stable', viatorSessionId(userId) === viatorSessionId(userId))
+  check('Viator session id hides user id', !viatorSessionId(userId).includes(userId))
+  const formattedExperiences = formatExperienceResults({
+    sessionId: viatorSessionId(userId),
+    experiences: [{
+      title: 'Barranco food walk',
+      code: 'TEST1',
+      rating: 4.87,
+      reviewCount: 321,
+      freeCancellation: true,
+      fromPrice: 49,
+      clickOffToLander: 'https://www.viator.com/example',
+      duration: { fixedDurationInMinutes: 150 },
+      keyAttributes: { mainCategory: 'Food Tours' },
+    }],
+  }, 'USD')
+  check('experience results render price', formattedExperiences.includes('$49'))
+  check('experience results render useful facts', /4\.9\/5.*2\.5 hr.*free cancellation/.test(formattedExperiences))
+  check('experience results preserve booking link', formattedExperiences.includes('viator.com/example'))
+  const mockCooking = await experiences.run!({
+    searchTerm: 'family cooking class in Brooklyn',
+    startDate: '2026-08-15',
+    endDate: '2026-08-15',
+    toPrice: 75,
+    currency: 'USD',
+  })
+  check('mock component finds Brooklyn cooking class', mockCooking.includes('Brooklyn Pizza-Making'))
+  check('mock component respects maximum price', !mockCooking.includes('Fresh Pasta'))
+  check('mock links cannot be mistaken for live bookings', mockCooking.includes('example.invalid'))
+  check('mock result includes E.164 operator phone', mockCooking.includes('+12125550102'))
+  check('mock operator phone is clearly labeled', mockCooking.includes('Mock operator phone'))
+  const mayaResults = searchMockExperiences(userId, {
+    searchTerm: 'food tonight in Lisbon, solo, quiet, hate crowds',
+    startDate: '2026-08-09',
+    endDate: '2026-08-09',
+    currency: 'EUR',
+  })
+  check('Maya receives exactly three Lisbon choices', mayaResults.experiences.length === 3)
+  check(
+    'Maya results are location-correct',
+    mayaResults.experiences.every((experience) => experience.code.startsWith('MOCK-LISBON-')),
+  )
+  check(
+    'Maya cards have a concrete why',
+    mayaResults.experiences.every((experience) => Boolean(experience.recommendationContext?.why)),
+  )
+  check(
+    'Maya cards expose evening times and crowd fit',
+    mayaResults.experiences.every((experience) =>
+      Boolean(experience.recommendationContext?.availableStartTimes?.length) &&
+      experience.recommendationContext?.crowdLevel === 'quiet'),
+  )
 
   section('proactive gates')
   repo.addMessage(userId, 'user', 'landed in Lima, staying in Miraflores till Sunday')

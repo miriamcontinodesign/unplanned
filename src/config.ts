@@ -15,6 +15,14 @@ function intEnv(name: string, fallback: number): number {
   return parsed
 }
 
+function booleanEnv(name: string, fallback = false): boolean {
+  const raw = process.env[name]?.trim().toLowerCase()
+  if (!raw) return fallback
+  if (raw === 'true' || raw === '1') return true
+  if (raw === 'false' || raw === '0') return false
+  throw new Error(`Environment variable ${name} must be true or false, got ${raw}`)
+}
+
 export const config = {
   /**
    * Optional: without it the Telegram bot and the proactive engine simply don't
@@ -30,6 +38,11 @@ export const config = {
 
   dbPath: path.resolve(process.env.ROADIO_DB_PATH?.trim() || './data/roadio.db'),
   photoDir: path.resolve(process.env.ROADIO_PHOTO_DIR?.trim() || './data/photos'),
+
+  viatorMcpUrl:
+    process.env.ROADIO_VIATOR_MCP_URL?.trim() ||
+    'https://exp-app-mcp.prod.ep.viator.com/mcp',
+  viatorMock: booleanEnv('ROADIO_VIATOR_MOCK'),
 
   tickMinutes: intEnv('ROADIO_TICK_MINUTES', 15),
 
