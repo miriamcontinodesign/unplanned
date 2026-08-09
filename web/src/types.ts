@@ -63,3 +63,24 @@ export interface Recommendation {
   reason: string
   suggestedDay: number
 }
+
+export interface Booking {
+  id: string
+  provider: string
+  productCode: string
+  productTitle: string
+  optionTitle: string | null
+  travelDate: string
+  startTime: string | null
+  partySize: number
+  currency: string
+  totalAmount: number
+  status: 'confirmed'
+  bookingRef: string | null
+  cancellationPolicy: string | null
+  createdAt: string
+}
+
+export interface CancelledBooking extends Omit<Booking, 'status'> {
+  status: 'cancelled'
+}

@@ -29,10 +29,12 @@ const { formatForecast, getForecast } = await import('../src/services/weather.js
 const { experienceSearchTool } = await import('../src/components/index.js')
 const { searchMockExperiences } = await import('../src/components/viator.mock.js')
 const { activityProvider } = await import('../src/providers/index.js')
+const { recommendationsFor } = await import('../src/onboarding/recommend.js')
 const { weatherTool, webSearchTool } = await import('../src/tools/index.js')
 const { formatExperienceResults, viatorSessionId } = await import('../src/services/viator.js')
 const { isQuietHour } = await import('../src/util/time.js')
 const { KeyedMutex } = await import('../src/util/mutex.js')
+const { createServer } = await import('../src/http/server.js')
 
 let failures = 0
 
@@ -228,6 +230,81 @@ async function main(): Promise<void> {
       .catch(() => undefined)
     check('a spent hold cannot be booked twice', !replayed)
   }
+
+  section('booking HTTP flow')
+  const app = createServer(new KeyedMutex())
+  const apiCookie = `roadio_session=${token}`
+  const productToBook = results[1]!
+  const confirmResponse = await app.request('/api/bookings/confirm', {
+    method: 'POST',
+    headers: { cookie: apiCookie, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      productCode: productToBook.productCode,
+      dayIndex: 3,
+      travelDate: '2026-09-02',
+    }),
+  })
+  const confirmBody = await confirmResponse.json() as {
+    booking?: { status: string; productCode: string; bookingRef: string | null }
+    itinerary?: Array<{ day: number; items: Array<{ productCode: string }> }>
+  }
+  check(
+    'Book action confirms through provider',
+    confirmResponse.status === 200 &&
+      confirmBody.booking?.status === 'confirmed' &&
+      Boolean(confirmBody.booking.bookingRef),
+  )
+  check(
+    'confirmed booking is removed from fresh suggestions',
+    !(await recommendationsFor(userId)).some(
+      (recommendation) => recommendation.productCode === productToBook.productCode,
+    ),
+  )
+
+  const confirmedResponse = await app.request('/api/bookings/confirmed', {
+    headers: { cookie: apiCookie },
+  })
+  const confirmedBody = await confirmedResponse.json() as {
+    bookings?: Array<{ status: string; productCode: string }>
+  }
+  check(
+    'confirmed tab endpoint lists the booking',
+    confirmedBody.bookings?.some((booking) =>
+      booking.status === 'confirmed' && booking.productCode === productToBook.productCode) === true,
+  )
+
+  const repeatConfirm = await app.request('/api/bookings/confirm', {
+    method: 'POST',
+    headers: { cookie: apiCookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ productCode: productToBook.productCode, dayIndex: 3 }),
+  })
+  const repeatBody = await repeatConfirm.json() as { booking?: { id: string } }
+  check(
+    'repeated Book action is idempotent',
+    repeatBody.booking?.id === repo.listBookings(userId)
+      .find((booking) => booking.productCode === productToBook.productCode)?.id,
+  )
+
+  const confirmedId = repeatBody.booking?.id ?? ''
+  const cancelResponse = await app.request(`/api/bookings/${confirmedId}/cancel`, {
+    method: 'POST',
+    headers: { cookie: apiCookie },
+  })
+  const cancelBody = await cancelResponse.json() as {
+    booking?: { status: string }
+    itinerary?: Array<{ items: Array<{ productCode: string }> }>
+  }
+  check('Cancel action marks booking cancelled', cancelBody.booking?.status === 'cancelled')
+  const afterCancel = await app.request('/api/bookings/confirmed', {
+    headers: { cookie: apiCookie },
+  })
+  const afterCancelBody = await afterCancel.json() as {
+    bookings?: Array<{ id: string }>
+  }
+  check(
+    'cancelled booking leaves Confirmed list',
+    afterCancelBody.bookings?.some((booking) => booking.id === confirmedId) === false,
+  )
 
   section('weather (live)')
   const forecast = geo ? await getForecast(geo.latitude, geo.longitude, 3) : null

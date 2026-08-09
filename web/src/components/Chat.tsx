@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Send } from 'lucide-react'
 import { RecommendationCard } from './RecommendationCard'
+import { RecommendationMap } from './RecommendationMap'
 import { formatTime } from '../format'
 import type { ChatMessage, Phase, Recommendation } from '../types'
 
@@ -40,11 +41,12 @@ export function Chat({
   footer?: ReactNode
 }) {
   const [draft, setDraft] = useState('')
+  const [mappedItems, setMappedItems] = useState<Recommendation[] | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages.length, busy, loadingIndex])
+  }, [messages.length, busy, loadingIndex, mappedItems])
 
   const submit = (text: string) => {
     const trimmed = text.trim()
@@ -101,10 +103,29 @@ export function Chat({
         )}
 
         {error && <div className="bubble error">{error}</div>}
+
+        {mappedItems && (
+          <div className="msg-group assistant map-message">
+            <RecommendationMap items={mappedItems} onClose={() => setMappedItems(null)} />
+          </div>
+        )}
       </div>
 
       {!busy && (
         <div className="suggestion-row">
+          {phase === 'ready' && Object.values(carousels).some((items) => items.length > 0) && (
+            <button
+              onClick={() => {
+                const unique = new Map<string, Recommendation>()
+                Object.values(carousels).flat().forEach((item) => {
+                  if (cardStatus[item.productCode] !== 'passed') unique.set(item.productCode, item)
+                })
+                setMappedItems([...unique.values()])
+              }}
+            >
+              show on map
+            </button>
+          )}
           {PROMPTS[phase].map((prompt) => (
             <button key={prompt} onClick={() => submit(prompt)}>
               {prompt}
