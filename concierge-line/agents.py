@@ -261,17 +261,32 @@ def render_agent_text(filename: str, variables: dict[str, str]) -> str:
     return text.strip()
 
 
+def prompt_override_enabled() -> bool:
+    """Off unless explicitly turned on. This default is load-bearing.
+
+    Sending an override the agent does not permit does NOT fail at call
+    placement - the API returns 200, the phone rings, and the conversation
+    then dies at init with code 1008 "Override for field 'first_message' is
+    not allowed by config". The caller answers to silence and the line drops.
+
+    Because the rejection is invisible at request time, defaulting this on
+    turns a working demo into a dead one. Enable overrides on the agent first
+    (Security/Advanced), then set ELEVENLABS_PROMPT_OVERRIDE=1.
+    """
+    return bool(os.environ.get("ELEVENLABS_PROMPT_OVERRIDE", "").strip())
+
+
 def _override_block(variables: dict[str, str]) -> dict[str, Any] | None:
     """A fully-resolved prompt to send with the call.
 
     The agent's dashboard prompt is a config we do not control from here, and
     when it drifts the symptom is an agent that opens the call not knowing the
     date, time or party size and has to ask for everything. Sending the
-    resolved prompt with the call makes the dashboard copy irrelevant.
-
-    Requires "overrides" to be enabled on the agent; place_call falls back to
-    calling without this block if ElevenLabs rejects it.
+    resolved prompt with the call makes the dashboard copy irrelevant - but
+    only when the agent permits overrides. See prompt_override_enabled.
     """
+    if not prompt_override_enabled():
+        return None
     system = render_agent_text("system-prompt.txt", variables)
     first = render_agent_text("first-message.txt", variables)
     if not system and not first:
@@ -434,13 +449,32 @@ async def sync_from_elevenlabs(task_id: str) -> bool:
         apply_reservation({**payload, "task_id": task_id})
 
     status = data.get("status")
-    if status in {"done", "failed"}:
-        settled = store.get(task_id)
-        if settled is not None and settled.get("status") not in {"completed", "failed"}:
-            settled["status"] = "completed"
-            store.save()
+    if status not in {"done", "failed"}:
+        return False
+
+    settled = store.get(task_id)
+    if settled is None:
         return True
-    return False
+
+    if status == "failed":
+        # A failed conversation is not a completed one. Reporting it as
+        # completed is how a dead call reads as a normal empty result.
+        meta = data.get("metadata") or {}
+        error = meta.get("error") or {}
+        reason = str(error.get("reason") or meta.get("termination_reason") or "call failed")
+        if error.get("code") == 1008 or "not allowed by config" in reason:
+            reason += (
+                "  -> the agent does not permit prompt overrides. Enable them on the "
+                "agent (Security/Advanced), or unset ELEVENLABS_PROMPT_OVERRIDE."
+            )
+        settled["status"] = "failed"
+        settled["error"] = reason
+        print(f"[poll] {task_id} failed: {reason}")
+    elif settled.get("status") not in {"completed", "failed"}:
+        settled["status"] = "completed"
+
+    store.save()
+    return True
 
 
 async def watch_live_call(task_id: str, poll_seconds: float = 4.0, max_seconds: float = 900.0) -> None:
