@@ -10,7 +10,7 @@ import type {
   HoldRequest,
   HoldResult,
 } from './types.js'
-import { ProviderError } from './types.js'
+import { BUDGET_CEILING, ProviderError } from './types.js'
 
 /**
  * Archetypes the sample catalogue is built from. Each destination gets a stable
@@ -154,13 +154,6 @@ const ARCHETYPES: Archetype[] = [
     minutes: 480,
   },
 ]
-
-const BUDGET_CEILING: Record<string, number> = {
-  shoestring: 60,
-  moderate: 120,
-  comfortable: 260,
-  luxury: Number.POSITIVE_INFINITY,
-}
 
 interface HoldRecord {
   request: HoldRequest

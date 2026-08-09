@@ -1,11 +1,4 @@
-import {
-  currentStay,
-  listOpenPlans,
-  listPreferences,
-  listStays,
-  recentNudges,
-  type Stay,
-} from '../db/repo.js'
+import { currentStay, listOpenPlans, listPreferences, listStays, type Stay } from '../db/repo.js'
 import { daysUntil, localDate, localTimeLabel } from '../util/time.js'
 
 export function describeStay(stay: Stay | undefined): string {
@@ -76,17 +69,6 @@ export function renderTravelerState(userId: string): string {
   } else {
     lines.push('KNOWN PREFERENCES:')
     for (const pref of prefs) lines.push(`  ${pref.kind}: ${pref.text}`)
-  }
-
-  const nudges = recentNudges(userId, 8)
-  lines.push('')
-  if (nudges.length === 0) {
-    lines.push('SUGGESTIONS ALREADY SENT: none.')
-  } else {
-    lines.push('SUGGESTIONS ALREADY SENT (do not repeat these):')
-    for (const nudge of nudges) {
-      lines.push(`  ${nudge.sentAt.slice(0, 16)} [${nudge.topic}] ${nudge.text.slice(0, 160)}`)
-    }
   }
 
   return lines.join('\n')

@@ -1,4 +1,5 @@
 import { searchExperiences } from '../services/viator.js'
+import { BUDGET_CEILING } from './types.js'
 import type { Activity, ActivityProvider, ActivitySearchQuery, AvailabilityOption } from './types.js'
 
 function minutes(duration: { fixedDurationInMinutes?: number; variableDurationFromMinutes?: number; variableDurationToMinutes?: number } | undefined): number {
@@ -25,14 +26,24 @@ export class ViatorProvider implements ActivityProvider {
     if (!query.userId || !query.fromDate || !query.toDate) {
       throw new Error('Viator search requires a traveler and participation dates.')
     }
+
+    // Fold what the traveler has actually told the bot into the search itself,
+    // rather than filtering a generic result afterwards - Viator's search is
+    // semantic text, so party size and taste steer which experiences surface
+    // at all, not just how they're ranked once back.
     const interests = query.interests?.length ? `, ${query.interests.join(', ')}` : ''
+    const party =
+      query.partySize && query.partySize > 1 ? `, for a group of ${query.partySize}` : ''
+    const ceiling = query.budgetLevel ? BUDGET_CEILING[query.budgetLevel] : undefined
+
     const result = await searchExperiences(query.userId, {
-      searchTerm: `tours and activities in ${query.destination}${interests}`,
+      searchTerm: `tours and activities in ${query.destination}${interests}${party}`,
       startDate: query.fromDate,
       endDate: query.toDate,
       currency: 'USD',
       locale: 'en-US',
       limit: query.limit,
+      ...(ceiling !== undefined && Number.isFinite(ceiling) ? { toPrice: ceiling } : {}),
     })
 
     return result.experiences.map((experience) => {

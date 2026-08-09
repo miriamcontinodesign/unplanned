@@ -23,7 +23,6 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [carousels, setCarousels] = useState<Record<number, Recommendation[]>>({})
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null)
-  const [sampleData, setSampleData] = useState(false)
   const [cardStatus, setCardStatus] = useState<Record<string, 'added' | 'passed'>>({})
   const [slot, setSlot] = useState<TimeOfDay>(guessSlot())
   const [hasStarted, setHasStarted] = useState(false)
@@ -43,7 +42,6 @@ export default function App() {
     try {
       const result = await api.recommendations(requestedSlot)
       setCarousels((prev) => ({ ...prev, [attachIndex]: result.recommendations }))
-      setSampleData(Boolean(result.sampleData))
       setSlot(result.slot)
     } catch {
       // A failed refresh shouldn't blow away what's already on screen.
@@ -239,13 +237,6 @@ export default function App() {
           <RefreshCw />
         </button>
       </header>
-
-      {sampleData && (
-        <div className="sample-banner">
-          <span>◆</span>
-          <span>Sample inventory - realistic but not bookable.</span>
-        </div>
-      )}
 
       {snapshot.trip && tab === 'chat' && <TimeSlotPicker value={slot} onChange={changeSlot} />}
 

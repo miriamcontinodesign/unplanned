@@ -53,13 +53,21 @@ export function transcriptText(userId: string, limit = 8): string {
  * each other.
  */
 export async function generateReply(userId: string): Promise<string> {
-  const result = await runAgent({
-    system: conciergeSystem(userId),
-    messages: conversationMessages(userId),
-    tools: [weatherTool(userId), experienceSearchTool(userId)],
-    effort: effort.reply,
-    maxIterations: 6,
-  })
+  const run = () =>
+    runAgent({
+      system: conciergeSystem(userId),
+      messages: conversationMessages(userId),
+      tools: [weatherTool(userId), experienceSearchTool(userId)],
+      effort: effort.reply,
+      maxIterations: 6,
+    })
+
+  // Cheap models occasionally return a bare/near-empty completion with no
+  // tool calls - not an error OpenRouter reports, just nothing worth showing.
+  // One retry clears it almost every time, so it's worth the extra call
+  // before falling back to an apology.
+  let result = await run()
+  if (!result.text.trim()) result = await run()
 
   return (
     result.text ||
