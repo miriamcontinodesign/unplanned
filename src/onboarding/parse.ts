@@ -72,6 +72,26 @@ const LEADING_FILLER = [
 
 const TRAILING_FILLER = ['please', 'thanks', 'thank you']
 
+/**
+ * A place name never spans a clause boundary, so split there and judge each
+ * piece on its own. Splitting before a first-person pronoun catches the same
+ * break when the traveler runs the clauses together without punctuation.
+ */
+const CLAUSE_SPLIT =
+  /[,;.!?\n]+|\s+(?:but|though|although)\s+|\s+(?=(?:i|we|i'm|we're|i've|we've)\b)/
+
+/**
+ * A clause carrying one of these is the traveler talking about themselves, not
+ * naming a place. Worth rejecting outright rather than geocoding: "I love food"
+ * mostly misses, but when it hits it hits some unrelated town and we would
+ * confidently plan the wrong trip.
+ */
+const PROSE_MARKERS =
+  /\b(?:i|we|my|our|me|us|i'm|we're|love|loves|like|likes|want|wants|wanna|prefer|prefers|enjoy|enjoys|hate|hates|need|needs|interested|nothing|anything|something)\b/
+
+/** Geocoding is a network call, so only the most plausible clauses get one. */
+const MAX_GEOCODE_ATTEMPTS = 3
+
 /** Interest keywords mapped onto the catalogue's tag vocabulary. */
 const INTEREST_KEYWORDS: Record<string, string[]> = {
   food: ['food', 'eat', 'eating', 'restaurant', 'restaurants', 'cuisine', 'culinary', 'foodie', 'dining', 'street food'],
@@ -173,11 +193,11 @@ export function parseBudget(input: string): ParsedTurn['budgetLevel'] {
 }
 
 /**
- * Strip duration and filler, then treat what is left as a candidate place.
- * Returns null when nothing plausible remains.
+ * Strip duration and filler from a single clause, then treat what is left as a
+ * candidate place. Returns null when nothing plausible remains.
  */
-export function candidatePlace(input: string): string | null {
-  let text = input.trim().toLowerCase()
+function placeFromClause(clause: string): string | null {
+  let text = clause.trim().toLowerCase()
 
   text = text
     .replace(/\b\d+\s*(day|night|week)s?\b/g, ' ')
@@ -200,15 +220,37 @@ export function candidatePlace(input: string): string | null {
 
   text = text
     .replace(/^[\s,.!?;:-]+|[\s,.!?;:-]+$/g, '')
+    .replace(/^(?:and|or|then)\s+|\s+(?:and|or|then)$/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 
   if (!text) return null
   // Long sentences are prose, not a place name.
   if (text.split(' ').length > 5) return null
+  if (PROSE_MARKERS.test(text)) return null
   if (/^(yes|no|yeah|nope|ok|okay|sure|hi|hello|hey|thanks|maybe)$/.test(text)) return null
 
   return text
+}
+
+/**
+ * Candidate places in the order they were said. A message usually carries at
+ * most one, but "Lisbon, then Porto" is a fair thing to type and the first that
+ * geocodes wins.
+ */
+export function candidatePlaces(input: string): string[] {
+  const seen = new Set<string>()
+  const places: string[] = []
+
+  for (const clause of input.toLowerCase().split(CLAUSE_SPLIT)) {
+    const place = placeFromClause(clause)
+    if (place && !seen.has(place)) {
+      seen.add(place)
+      places.push(place)
+    }
+  }
+
+  return places
 }
 
 /**
@@ -221,13 +263,16 @@ export async function parseTurn(input: string): Promise<ParsedTurn> {
   const budgetLevel = parseBudget(input)
   const partySize = parsePartySize(input)
 
-  const candidate = candidatePlace(input)
+  const candidates = candidatePlaces(input)
   let destination: GeoResult | null = null
-  if (candidate) destination = await geocode(candidate)
+  for (const candidate of candidates.slice(0, MAX_GEOCODE_ATTEMPTS)) {
+    destination = await geocode(candidate)
+    if (destination) break
+  }
 
   return {
     destination,
-    unresolvedPlace: destination ? null : candidate,
+    unresolvedPlace: destination ? null : (candidates[0] ?? null),
     days,
     interests,
     budgetLevel,

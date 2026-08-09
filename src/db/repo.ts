@@ -373,6 +373,26 @@ export function removePreference(userId: string, id: number): void {
     .run()
 }
 
+/**
+ * Wipe everything a trip is made of, keeping the traveler themselves.
+ *
+ * Identity and sessions survive so the cookie keeps working and a linked
+ * Telegram account stays linked - starting a new trip is not becoming a new
+ * person. Bookings survive too, deliberately: a confirmed booking is a real
+ * commitment to an operator, and deleting our row would not cancel it, it would
+ * only lose the reference needed to.
+ */
+export function resetTraveler(userId: string): void {
+  db.transaction((tx) => {
+    tx.delete(messages).where(eq(messages.userId, userId)).run()
+    tx.delete(plans).where(eq(plans.userId, userId)).run()
+    tx.delete(preferences).where(eq(preferences.userId, userId)).run()
+    tx.delete(journal).where(eq(journal.userId, userId)).run()
+    tx.delete(nudges).where(eq(nudges.userId, userId)).run()
+    tx.delete(stays).where(eq(stays.userId, userId)).run()
+  })
+}
+
 // --------------------------------------------------------------- journal
 
 export function addJournalEntry(entry: {

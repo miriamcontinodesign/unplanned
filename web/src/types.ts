@@ -40,7 +40,6 @@ export interface ChatMessage {
 export interface Snapshot {
   user: { id: string; linked: boolean }
   phase: Phase
-  greeting: string
   trip: Trip | null
   itinerary: ItineraryDay[]
   preferences: Preference[]

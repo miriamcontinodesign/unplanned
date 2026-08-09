@@ -76,7 +76,9 @@ npm run dev
 
 **`TELEGRAM_BOT_TOKEN`** - message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts, paste the token it gives you. Optional: without it the bot and the proactive engine stay down.
 
-**`ANTHROPIC_API_KEY`** - from [console.anthropic.com](https://console.anthropic.com/settings/keys). If you've run `ant auth login` you can leave this blank; the SDK picks up the profile.
+**`OPENROUTER_API_KEY`** - from [openrouter.ai/keys](https://openrouter.ai/keys).
+Optional: the web flow and `npm run smoke` run without it, but anything that calls the model needs it.
+`ROADIO_MODEL` picks the OpenRouter model slug and defaults to `google/gemini-2.5-flash-lite`.
 
 Then open Telegram, find your bot, and send it something like:
 
@@ -103,7 +105,7 @@ Send a photo and it gets captioned and filed in the journal.
 ## Testing
 
 ```bash
-npm run smoke       # 82 checks, no API keys needed
+npm run smoke       # 105 checks, no API keys needed
 npm run typecheck
 ```
 
@@ -127,7 +129,7 @@ It deliberately does **not** cover the model calls. Those need an API key, and a
 
 ## Not built yet
 
-- **Nothing has been run against the live model.** The request shapes typecheck against the SDK, and everything around them is covered by `npm run smoke`, but no reply, nudge, extraction or caption has actually been generated. Expect prompt tuning on first contact.
+- **Parts of the model layer are still unexercised.** The extraction pass and the reply agent have run live on OpenRouter, but the nudge agent, photo captioning and the Telegram surface have not. Expect prompt tuning on first contact. See [STATUS.md](./STATUS.md).
 - **Trip state is never pruned.** Preferences and plans accumulate forever and all of them go into every system prompt. Fine for a few weeks; needs summarisation for a long trip.
 - **The scheduler processes travelers sequentially** in one process. Correct for a handful of users, not for a fleet - it wants a work queue before it grows.
 - **Journal generation is basic** and doesn't use the photos, only their captions.

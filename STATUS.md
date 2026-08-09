@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-09.
 
-Backend and web app both compile, build, and pass 82 smoke checks. The MVP flow -
+Backend and web app both compile, build, and pass 105 smoke checks. The MVP flow -
 chat onboarding to recommendations to a day-by-day itinerary - runs end to end
 with no credentials at all.
 
@@ -61,7 +61,7 @@ the model pass.
 
 ## Verified, and how
 
-**99 smoke checks** (`npm run smoke`) - no credentials, real Open-Meteo calls.
+**105 smoke checks** (`npm run smoke`) - no credentials, real Open-Meteo calls.
 Covers migrations, opaque identity, web sessions, link codes and the user merge,
 the sample catalogue, the full booking path, the proactive gates, per-traveler
 serialisation, and the conversation window.
