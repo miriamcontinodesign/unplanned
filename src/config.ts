@@ -25,16 +25,9 @@ function booleanEnv(name: string, fallback = false): boolean {
 
 export const config = {
   /**
-   * Optional: without it the Telegram bot and the proactive engine simply don't
-   * start, and the web app runs on its own. That keeps the web half runnable
-   * (and testable) with no credentials at all.
-   */
-  telegramBotToken: optionalEnv('TELEGRAM_BOT_TOKEN'),
-
-  /**
-   * Required for anything that calls the model. Left optional here so the web
-   * app and the smoke test still run without it, matching how the Telegram
-   * token behaves - the failure should come from the call, not from startup.
+   * Required for anything that calls the model. Left optional here so the
+   * smoke test still runs without it - the failure should come from the call,
+   * not from startup.
    */
   openRouterApiKey: optionalEnv('OPENROUTER_API_KEY'),
 
@@ -53,14 +46,11 @@ export const config = {
   reasoning: booleanEnv('ROADIO_REASONING', true),
 
   dbPath: path.resolve(process.env.ROADIO_DB_PATH?.trim() || './data/roadio.db'),
-  photoDir: path.resolve(process.env.ROADIO_PHOTO_DIR?.trim() || './data/photos'),
 
   viatorMcpUrl:
     process.env.ROADIO_VIATOR_MCP_URL?.trim() ||
     'https://exp-app-mcp.prod.ep.viator.com/mcp',
   viatorMock: booleanEnv('ROADIO_VIATOR_MOCK'),
-
-  tickMinutes: intEnv('ROADIO_TICK_MINUTES', 15),
 
   httpPort: intEnv('ROADIO_HTTP_PORT', 8787),
   /** Built SPA, served by the same process in production. */

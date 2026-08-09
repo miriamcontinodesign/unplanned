@@ -5,16 +5,7 @@ import { config, effort, reasoningParams } from '../config.js'
 import { EXTRACTOR_SYSTEM } from './prompts.js'
 import { renderTravelerState } from './state.js'
 import { geocode } from '../services/geocode.js'
-import {
-  addJournalEntry,
-  addPlan,
-  addPreference,
-  currentStay,
-  listOpenPlans,
-  setPlanStatus,
-  setStayGeo,
-  upsertCurrentStay,
-} from '../db/repo.js'
+import { addPreference, setStayGeo, upsertCurrentStay } from '../db/repo.js'
 import { describeError, logger } from '../util/log.js'
 
 const log = logger('extract')
@@ -31,34 +22,14 @@ const Extraction = z.object({
       country: z.string().nullable(),
       lodgingName: z.string().nullable(),
       lodgingArea: z.string().nullable(),
-      arrivalDate: z.string().nullable(),
-      departureDate: z.string().nullable(),
+      budgetLevel: z.enum(['shoestring', 'moderate', 'comfortable', 'luxury']).nullable(),
+      partySize: z.number().int().nullable(),
     })
     .nullable(),
-  newPlans: z.array(
-    z.object({
-      title: z.string(),
-      detail: z.string().nullable(),
-      onDate: z.string().nullable(),
-      atTime: z.string().nullable(),
-    }),
-  ),
-  planStatusUpdates: z.array(
-    z.object({
-      planId: z.number(),
-      status: z.enum(['idea', 'booked', 'done', 'dropped']),
-    }),
-  ),
   newPreferences: z.array(
     z.object({
       kind: z.enum(['like', 'dislike', 'constraint']),
       text: z.string(),
-    }),
-  ),
-  journalEntries: z.array(
-    z.object({
-      text: z.string(),
-      occurredOn: z.string().nullable(),
     }),
   ),
 })
@@ -128,8 +99,8 @@ async function applyExtraction(userId: string, extraction: Extraction): Promise<
       country: extraction.stay.country,
       lodgingName: extraction.stay.lodgingName,
       lodgingArea: extraction.stay.lodgingArea,
-      arrivalDate: extraction.stay.arrivalDate,
-      departureDate: extraction.stay.departureDate,
+      ...(extraction.stay.budgetLevel ? { budgetLevel: extraction.stay.budgetLevel } : {}),
+      ...(extraction.stay.partySize ? { partySize: extraction.stay.partySize } : {}),
     })
 
     // Coordinates and timezone drive weather, quiet hours and search bias, so
@@ -151,31 +122,8 @@ async function applyExtraction(userId: string, extraction: Extraction): Promise<
     }
   }
 
-  for (const plan of extraction.newPlans) {
-    if (!plan.title.trim()) continue
-    addPlan(userId, plan)
-  }
-
-  const openIds = new Set(listOpenPlans(userId).map((p) => p.id))
-  for (const update of extraction.planStatusUpdates) {
-    if (!openIds.has(update.planId)) continue
-    setPlanStatus(userId, update.planId, update.status)
-  }
-
   for (const pref of extraction.newPreferences) {
     if (!pref.text.trim()) continue
     addPreference(userId, pref.kind, pref.text)
-  }
-
-  const stayId = currentStay(userId)?.id ?? null
-  for (const entry of extraction.journalEntries) {
-    if (!entry.text.trim()) continue
-    addJournalEntry({
-      userId,
-      stayId,
-      kind: 'note',
-      text: entry.text.trim(),
-      occurredOn: entry.occurredOn,
-    })
   }
 }

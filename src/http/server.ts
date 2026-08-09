@@ -9,9 +9,9 @@ import { describeError, logger } from '../util/log.js'
 import { localHour } from '../util/time.js'
 import type { KeyedMutex } from '../util/mutex.js'
 import {
+  addMessage,
   addPlan,
   createBooking,
-  createLinkCode,
   createSession,
   createUser,
   currentStay,
@@ -24,11 +24,13 @@ import {
   updateBooking,
   type User,
 } from '../db/repo.js'
-import { applyDestination, greeting, handleTurn, phaseFor, placeLabel } from '../onboarding/engine.js'
+import { applyDestination, greeting, phaseFor, placeLabel } from '../onboarding/engine.js'
 import { recommendationsFor, slotForHour, type TimeOfDay } from '../onboarding/recommend.js'
 import { activityProvider } from '../providers/index.js'
 import { conciergeTaskUrl, createBookingTask } from '../concierge/client.js'
 import { timezoneFor } from '../services/geocode.js'
+import { extractAndApply } from '../llm/extract.js'
+import { generateReply, transcriptText } from '../llm/reply.js'
 
 const log = logger('http')
 
@@ -106,10 +108,20 @@ export function createServer(mutex: KeyedMutex) {
     if (message.length > 2000) return c.json({ error: 'That is a bit long for a chat message.' }, 400)
 
     // Serialised per traveler so two fast turns cannot interleave their writes.
-    const result = await mutex.run(user.id, () => handleTurn(user.id, message))
+    // State first (extraction), then the reply - so the answer sees the
+    // destination or preference the traveler just mentioned rather than the
+    // previous one.
+    const reply = await mutex.run(user.id, async () => {
+      const priorTranscript = transcriptText(user.id, 8)
+      addMessage(user.id, 'user', message)
+      await extractAndApply(user.id, message, priorTranscript)
+      const answer = await generateReply(user.id)
+      addMessage(user.id, 'assistant', answer)
+      return answer
+    })
 
     // snapshot() recomputes phase from the freshly written state.
-    return c.json({ reply: result.reply, ...snapshot(user) })
+    return c.json({ reply, ...snapshot(user) })
   })
 
   // Resolves a detected location silently - it is not a conversational turn,
@@ -409,14 +421,6 @@ export function createServer(mutex: KeyedMutex) {
 
     const cancelled = updateBooking(booking.id, { status: 'cancelled' })!
     return c.json({ booking: cancelled, ...snapshot(user) })
-  })
-
-  // --- telegram link ---------------------------------------------------------
-
-  app.post('/api/link/code', (c) => {
-    const user = c.get('user')
-    const { code, expiresAt } = createLinkCode(user.id)
-    return c.json({ code, expiresAt })
   })
 
   // --- static ----------------------------------------------------------------

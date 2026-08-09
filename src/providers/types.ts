@@ -1,5 +1,13 @@
 export type BudgetLevel = 'shoestring' | 'moderate' | 'comfortable' | 'luxury'
 
+/** Per-person starting-price ceiling a budget level tolerates, shared across providers. */
+export const BUDGET_CEILING: Record<BudgetLevel, number> = {
+  shoestring: 60,
+  moderate: 120,
+  comfortable: 260,
+  luxury: Number.POSITIVE_INFINITY,
+}
+
 export interface Money {
   amount: number
   currency: string

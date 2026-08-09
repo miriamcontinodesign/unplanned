@@ -1,8 +1,8 @@
 /**
  * Smoke test for everything that doesn't need model credentials: migrations,
- * the trip-state write path, web sessions, Telegram account linking and its user
+ * the trip-state write path, web sessions, account linking and its user
  * merge, the sample activity catalogue and its booking path, live geocoding and
- * weather, the proactive gates, and per-traveler serialisation.
+ * weather, and per-traveler serialisation.
  *
  *   npm run smoke
  *
@@ -16,14 +16,12 @@ import path from 'node:path'
 // Point the app at a scratch database before anything imports the config.
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'roadio-smoke-'))
 process.env.ROADIO_DB_PATH = path.join(scratch, 'smoke.db')
-process.env.TELEGRAM_BOT_TOKEN ??= 'smoke-test-placeholder'
 process.env.ROADIO_VIATOR_MOCK = 'true'
 
 const { runMigrations } = await import('../src/db/index.js')
 const repo = await import('../src/db/repo.js')
 const { renderTravelerState } = await import('../src/llm/state.js')
 const { conversationMessages } = await import('../src/llm/reply.js')
-const { skipReason } = await import('../src/proactive/nudge.js')
 const { geocode } = await import('../src/services/geocode.js')
 const { formatForecast, getForecast } = await import('../src/services/weather.js')
 const { experienceSearchTool } = await import('../src/components/index.js')
@@ -408,30 +406,6 @@ async function main(): Promise<void> {
     usCallingMocks.experiences[0]?.contactPhoneIsMock === true,
   )
 
-  section('proactive gates')
-  repo.addMessage(userId, 'user', 'landed in Lima, staying in Miraflores till Sunday')
-  repo.updateUser(userId, { quietStartHour: 0, quietEndHour: 0 })
-  check('eligible when nothing blocks', skipReason(repo.getUser(userId)!) === null)
-
-  repo.updateUser(userId, { paused: true })
-  check('pause blocks', skipReason(repo.getUser(userId)!) === 'paused')
-  repo.updateUser(userId, { paused: false, maxNudgesPerDay: 1 })
-
-  repo.addNudge(userId, 'sunset-walk', 'Rain clears at 4, walk the Malecon.')
-  check('daily cap blocks', skipReason(repo.getUser(userId)!)?.includes('daily cap') === true)
-  check('nudge counted against local day', repo.nudgeCountToday(userId, 'America/Lima') === 1)
-
-  repo.updateUser(userId, { maxNudgesPerDay: 5 })
-  check('minimum gap blocks', skipReason(repo.getUser(userId)!)?.includes('too soon') === true)
-
-  repo.updateUser(userId, { minNudgeGapMinutes: 0, quietStartHour: 0, quietEndHour: 23 })
-  check('quiet hours block', skipReason(repo.getUser(userId)!)?.includes('quiet hours') === true)
-  repo.updateUser(userId, { quietStartHour: 21, quietEndHour: 8 })
-
-  const webOnly = repo.createUser('Web only')
-  check('web-only traveler is skipped by the proactive engine', skipReason(webOnly) === 'location unknown')
-  check('proactive engine only lists reachable travelers', repo.listActiveUsers().every((u) => u.telegramChatId))
-
   section('account linking')
   // A fresh web traveler with their own onboarding state.
   const webUser = repo.createUser('Web visitor')
@@ -514,7 +488,6 @@ async function main(): Promise<void> {
   check('names the city', /CURRENT LOCATION: Lima/.test(state))
   check('lists open plans', /Food tour in Barranco/.test(state))
   check('hides dropped plans', !/Passed on this one/.test(state))
-  check('lists prior suggestions', /sunset-walk/.test(state))
   check('includes local time', /Local date and time/.test(state))
 
   console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)
