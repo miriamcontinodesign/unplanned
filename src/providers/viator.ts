@@ -6,7 +6,12 @@ function minutes(duration: { fixedDurationInMinutes?: number; variableDurationFr
 }
 
 function imageUrl(template: string | undefined): string | null {
-  return template?.replace('{w}', '640').replace('{h}', '480') ?? null
+  return template?.replace('{w}', '400').replace('{h}', '400') ?? null
+}
+
+function featureLabel(value: string): string {
+  const label = value.replace(/_/g, ' ').trim().toLowerCase()
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 /** Live Viator search adapter used by the web recommendation feed. */
@@ -37,7 +42,7 @@ export class ViatorProvider implements ActivityProvider {
         provider: this.name,
         productCode: experience.code,
         title: experience.title,
-        summary: features.length > 0 ? features.slice(0, 3).join(' · ') : `${category} available through Viator.`,
+        summary: features.length > 0 ? features.slice(0, 3).map(featureLabel).join(' · ') : '',
         destination: query.destination,
         durationMinutes: minutes(experience.duration),
         rating: experience.rating ?? null,
@@ -45,6 +50,7 @@ export class ViatorProvider implements ActivityProvider {
         fromPrice: { amount: experience.fromPrice ?? 0, currency: 'USD' },
         imageUrl: imageUrl(experience.thumbnail),
         tags: [category, ...features].map((value) => value.toLowerCase()),
+        category,
         freeCancellation: experience.freeCancellation,
         productUrl: experience.clickOffToLander,
         meetingPoint: null,

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, CheckCircle2, Clock, Sparkles, Star } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock, PhoneCall, Star } from 'lucide-react'
 import { categoryFor, glyphFor, gradientFor } from './ActivityArt'
 import { formatDuration, formatPrice } from '../format'
 import type { Recommendation } from '../types'
@@ -9,22 +9,36 @@ export function RecommendationCard({
   tripDays,
   status,
   onAccept,
+  onCall,
   onPass,
 }: {
   item: Recommendation
   tripDays: number
   status: 'added' | 'passed' | undefined
   onAccept: (day: number) => void
+  onCall: (day: number) => Promise<'confirmed' | 'not_confirmed'>
   onPass: () => void
 }) {
   const [day, setDay] = useState(item.suggestedDay)
+  const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'confirmed' | 'not_confirmed' | 'unavailable'>('idle')
+
+  const callToBook = async () => {
+    if (callStatus === 'calling' || callStatus === 'confirmed') return
+    setCallStatus('calling')
+    try {
+      setCallStatus(await onCall(day))
+    } catch {
+      setCallStatus('unavailable')
+    }
+  }
 
   // Passed items are dropped for good - the recommender never resurfaces them,
   // so there is nothing useful left to show in the carousel.
   if (status === 'passed') return null
 
-  const badge = item.rating
-    ? `★ ${item.rating}`
+  const rating = item.rating?.toFixed(1)
+  const badge = rating
+    ? `★ ${rating}`
     : item.freeCancellation
       ? 'Free cancel'
       : (formatDuration(item.durationMinutes) ?? 'Sample pick')
@@ -38,21 +52,19 @@ export function RecommendationCard({
           : { background: gradientFor(item.productCode) }}
       >
         <div className="rec-banner-top">
-          <span className="rec-pill category">{categoryFor(item.tags)}</span>
+          <span className="rec-pill category">{item.category || categoryFor(item.tags)}</span>
           <span className="rec-pill badge">{badge}</span>
         </div>
         <div className="rec-banner-bottom">
-          <span className="rec-glyph">{glyphFor(item.tags)}</span>
+          {!item.imageUrl && <span className="rec-glyph">{glyphFor(item.tags)}</span>}
           <span className="rec-price-chip">{formatPrice(item.fromPrice)}</span>
         </div>
       </div>
 
       <div className="rec-body">
         <h4 className="rec-title">{item.title}</h4>
-        <p className="rec-summary">{item.summary}</p>
 
         <div className="rec-reason">
-          <Sparkles />
           <span>{item.reason}</span>
         </div>
 
@@ -60,7 +72,7 @@ export function RecommendationCard({
           <span className="rec-dist">
             {item.rating ? <Star /> : <Clock />}
             {item.rating
-              ? `${item.rating}${item.reviewCount ? ` (${item.reviewCount.toLocaleString()})` : ''}`
+              ? `${rating}${item.reviewCount ? ` (${item.reviewCount.toLocaleString()})` : ''}`
               : (formatDuration(item.durationMinutes) ?? 'Flexible timing')}
           </span>
           <span className="rec-price">{formatPrice(item.fromPrice)}</span>
@@ -93,6 +105,20 @@ export function RecommendationCard({
             <button className="btn-accept" onClick={() => onAccept(day)}>
               <span>Add to itinerary</span>
               <ArrowRight />
+            </button>
+            <button
+              className={`btn-call is-${callStatus}`}
+              onClick={() => void callToBook()}
+              disabled={callStatus === 'calling' || callStatus === 'confirmed'}
+            >
+              <PhoneCall />
+              <span>
+                {callStatus === 'calling' && 'Calling…'}
+                {callStatus === 'confirmed' && 'Booking confirmed'}
+                {callStatus === 'not_confirmed' && 'Not booked — try again'}
+                {callStatus === 'unavailable' && 'Calling unavailable — try again'}
+                {callStatus === 'idle' && 'Call to book'}
+              </span>
             </button>
           </div>
         )}

@@ -88,6 +88,23 @@ export default function App() {
     }
   }
 
+  const callToBook = async (productCode: string, day: number) => {
+    const call = await api.callToBook(productCode, day)
+    showToast('Calling now — we’ll ask about availability')
+    const deadline = Date.now() + 5 * 60_000
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500))
+      const result = await api.callStatus(call.taskId)
+      if (result.status === 'completed') {
+        return result.confirmed === true ? 'confirmed' : 'not_confirmed'
+      }
+      if (result.status === 'failed') return 'not_confirmed'
+    }
+
+    throw new Error('Call status timed out.')
+  }
+
   const remove = async (id: number) => {
     try {
       setSnapshot(await api.remove(id))
@@ -165,6 +182,7 @@ export default function App() {
         tripDays={tripDays}
         loadingIndex={loadingIndex}
         onAccept={accept}
+        onCall={callToBook}
         onPass={pass}
         footer={
           snapshot.trip && (

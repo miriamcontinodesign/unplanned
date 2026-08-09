@@ -59,6 +59,7 @@ export interface Recommendation {
   fromPrice: { amount: number; currency: string }
   imageUrl: string | null
   tags: string[]
+  category?: string | null
   freeCancellation: boolean
   reason: string
   suggestedDay: number

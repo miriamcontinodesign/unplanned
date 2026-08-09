@@ -18,6 +18,7 @@ export interface Activity {
   /** Null when the provider has no imagery; the UI renders generated art instead. */
   imageUrl: string | null
   tags: string[]
+  category?: string | null
   freeCancellation: boolean
   /** The operator's own page. Used for deeplink booking and "read more". */
   productUrl: string | null
