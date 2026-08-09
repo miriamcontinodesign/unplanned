@@ -12,6 +12,7 @@ the real webhook calls, so exercising it exercises the real path.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from datetime import date, datetime
 from typing import Any
@@ -280,6 +281,134 @@ async def place_call(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+CONVERSATION_URL = "https://api.elevenlabs.io/v1/convai/conversations/{conversation_id}"
+
+
+async def fetch_conversation(conversation_id: str) -> dict[str, Any] | None:
+    """Read a conversation back from ElevenLabs.
+
+    This is the reason the module still works with no public tunnel: when the
+    webhooks cannot reach us, ElevenLabs still holds the transcript and the
+    agent's tool calls. Pulling beats waiting to be pushed to.
+    """
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if not key or not conversation_id:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                CONVERSATION_URL.format(conversation_id=conversation_id),
+                headers={"xi-api-key": key},
+            )
+        if response.status_code != 200:
+            print(f"[poll] conversation {conversation_id} -> HTTP {response.status_code}")
+            return None
+        return response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        print(f"[poll] {type(exc).__name__}: {exc}")
+        return None
+
+
+def transcript_from_conversation(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Map ElevenLabs turns onto our shape.
+
+    Their fields are role/message/time_in_call_secs, and role is agent|user -
+    not text/ts and not agent|caller.
+    """
+    turns = []
+    for turn in data.get("transcript") or []:
+        text = (turn.get("message") or "").strip()
+        if not text:
+            continue
+        turns.append({
+            "role": "agent" if turn.get("role") == "agent" else "caller",
+            "text": text,
+            "ts": float(turn.get("time_in_call_secs") or 0),
+        })
+    return turns
+
+
+def reservation_from_conversation(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Recover the agent's submit_reservation arguments from the transcript.
+
+    When the tool webhook could not be delivered, the call the agent *made* is
+    still recorded. Its parameters are the same payload the webhook would have
+    carried, so we can fill the card from them.
+    """
+    for turn in data.get("transcript") or []:
+        for call in turn.get("tool_calls") or []:
+            if call.get("tool_name") != "submit_reservation":
+                continue
+            params = call.get("params_as_json")
+            if isinstance(params, dict):
+                return params
+            if isinstance(params, str):
+                try:
+                    parsed = json.loads(params)
+                except ValueError:
+                    continue
+                if isinstance(parsed, dict):
+                    return parsed
+    return None
+
+
+async def sync_from_elevenlabs(task_id: str) -> bool:
+    """Pull one snapshot of a call into the task. Returns True when it settled."""
+    task = store.get(task_id)
+    if task is None:
+        return True
+    conversation_id = str(task.get("conversation_id") or "")
+    data = await fetch_conversation(conversation_id)
+    if data is None:
+        return False
+
+    turns = transcript_from_conversation(data)
+    current = store.get(task_id)
+    if current is None:
+        return True
+    if turns and turns != current.get("transcript"):
+        current["transcript"] = turns
+        store.save()
+
+    if (payload := reservation_from_conversation(data)) is not None and current.get("result") is None:
+        apply_reservation({**payload, "task_id": task_id})
+
+    status = data.get("status")
+    if status in {"done", "failed"}:
+        settled = store.get(task_id)
+        if settled is not None and settled.get("status") not in {"completed", "failed"}:
+            settled["status"] = "completed"
+            store.save()
+        return True
+    return False
+
+
+async def watch_live_call(task_id: str, poll_seconds: float = 4.0, max_seconds: float = 900.0) -> None:
+    """Poll ElevenLabs until the call ends, mirroring it into the task.
+
+    Without this, a live call with no reachable post-call webhook sits in
+    `in_progress` forever - the card never fills and the button stays disabled,
+    so the task cannot even be re-dialled. The webhook is still the fast path
+    when a tunnel exists; this is what makes the tunnel optional.
+    """
+    waited = 0.0
+    while waited < max_seconds:
+        await asyncio.sleep(poll_seconds)
+        waited += poll_seconds
+        try:
+            if await sync_from_elevenlabs(task_id):
+                return
+        except Exception as exc:  # noqa: BLE001 - a poll must never kill the call
+            print(f"[poll] {type(exc).__name__}: {exc}")
+
+    print(f"[poll] gave up on {task_id} after {max_seconds:.0f}s")
+    stuck = store.get(task_id)
+    if stuck is not None and stuck.get("status") in {"dialing", "in_progress"}:
+        stuck["status"] = "failed"
+        stuck["error"] = "call did not report a result in time"
+        store.save()
+
+
 async def run_live_call(task_id: str) -> None:
     """Place a real call in the background.
 
@@ -307,6 +436,11 @@ async def run_live_call(task_id: str) -> None:
         current["call_sid"] = outcome["call_sid"]
         current["status"] = "in_progress"
         store.save()
+
+    # Mirror the call from ElevenLabs as it runs. The webhooks are the fast
+    # path when a tunnel exists; this is the safety net when one doesn't, and
+    # it is what stops a task sticking in `in_progress` forever.
+    await watch_live_call(task_id)
 
 
 # --------------------------------------------------------------------------

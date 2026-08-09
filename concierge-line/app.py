@@ -280,6 +280,31 @@ async def start_call(task_id: str) -> dict[str, Any]:
     return {"ok": True, "mode": "live", "task_id": task_id, "status": "dialing"}
 
 
+@app.post("/api/tasks/{task_id}/sync")
+async def sync_task(
+    task_id: str,
+    conversation_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Pull this task's call back from ElevenLabs.
+
+    Recovers a task stranded by an undeliverable post-call webhook: fills the
+    transcript, and the reservation from the agent's recorded tool-call
+    arguments. Safe to call repeatedly.
+
+    Pass `conversation_id` to adopt a specific call. Re-dialling a task
+    overwrites the stored id, which orphans the earlier conversation; this is
+    how you reattach one.
+    """
+    task = _task_or_404(task_id)
+    if conversation_id:
+        task["conversation_id"] = conversation_id.strip()
+        store.save()
+    if not task.get("conversation_id"):
+        raise HTTPException(status_code=409, detail="no conversation_id on this task")
+    settled = await agents.sync_from_elevenlabs(task_id)
+    return {"ok": True, "settled": settled, "task": _task_or_404(task_id)}
+
+
 @app.post("/api/tasks/{task_id}/simulate")
 async def simulate(task_id: str) -> dict[str, Any]:
     """Demo insurance. Fills a realistic result instantly, no network.
