@@ -33,6 +33,18 @@
       "type": "string",
       "description": "The name the booking is held under."
     },
+    "confirmation_code": {
+      "type": "string",
+      "description": "Confirmation or reference number the venue gave, digits only if they read one out. Empty if they gave none."
+    },
+    "price": {
+      "type": "string",
+      "description": "Price as stated, e.g. '$120 per person' or '$45 total'. Empty if not mentioned."
+    },
+    "check_in": {
+      "type": "string",
+      "description": "Where to arrive or check in, if the venue specified somewhere other than the main address."
+    },
     "alternatives_offered": {
       "type": "array",
       "items": { "type": "string" },

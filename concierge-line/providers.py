@@ -217,19 +217,30 @@ def deterministic_note(task: dict[str, Any]) -> str:
 
     if result.get("reservation_confirmed"):
         at_time = result.get("confirmed_time") or ""
-        time_phrase = f" at {at_time}" if at_time else ""
+        time_phrase = f" at **{at_time}**" if at_time else ""
         held_by = result.get("name_on_reservation") or traveler
-        under = f" under {held_by}" if held_by else ""
+        under = f" under **{held_by}**" if held_by else ""
         lines = [
-            f"{greeting}you're booked at {name}.",
-            f"Table for {party} on {when}{time_phrase}{under}.",
+            f"{greeting}you're booked at **{name}**.",
+            f"Table for **{party}** on **{when}**{time_phrase}{under}.",
         ]
+
+        # Say so when they didn't get the time they asked for - burying that
+        # is how someone turns up an hour early.
+        requested = (result.get("requested_time") or "").strip()
+        if requested and at_time and requested.lower() != at_time.lower():
+            lines.append(f"You asked for {requested}; **{at_time}** is what was available.")
+
+        if code := result.get("confirmation_code"):
+            lines.append(f"Confirmation **{code}**.")
+        if price := result.get("price"):
+            lines.append(f"Price: **{price}**.")
+        if check_in := result.get("check_in"):
+            lines.append(f"Check in at **{check_in}**.")
     else:
-        lines = [
-            f"{greeting}{name} couldn't take a booking for {when}.",
-        ]
+        lines = [f"{greeting}**{name}** couldn't take a booking for **{when}**."]
         if alternatives := result.get("alternatives_offered"):
-            lines.append(f"They offered {', '.join(alternatives)} instead.")
+            lines.append(f"They offered **{', '.join(alternatives)}** instead.")
 
     if special := result.get("special_requests_status"):
         lines.append(special.rstrip(".") + ".")
@@ -272,10 +283,14 @@ async def claude_note(task: dict[str, Any]) -> tuple[str, str]:
 
     system = (
         "You write a short, warm confirmation message to a traveler about a "
-        "reservation an assistant just made for them by phone. Exactly three "
+        "reservation an assistant just made for them by phone. Three or four "
         "sentences. Lead with whether it is booked and when. Never invent a "
         "fact - state only what was confirmed on the call. No sign-off, no "
-        "markdown headings, no greeting beyond their first name."
+        "markdown headings, no greeting beyond their first name.\n\n"
+        "Wrap the details they will need to act on in **double asterisks**: "
+        "the time, the confirmation number, the price, and where to check in. "
+        "If the time booked differs from the time requested, say so plainly - "
+        "burying that is how someone arrives an hour early."
     )
 
     try:

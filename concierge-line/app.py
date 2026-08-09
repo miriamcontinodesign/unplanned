@@ -181,8 +181,16 @@ async def health() -> dict[str, Any]:
         "fake_call_mode": agents.fake_call_mode(),
         "public_base_url": os.environ.get("PUBLIC_BASE_URL", "").strip() or None,
         "app_name": agents.app_name(),
+        # Masked: this ends up on screen during demos and in screenshots.
+        "demo_to_number": _masked_destination(),
         "tasks": len(store.TASKS),
     }
+
+
+def _masked_destination() -> str | None:
+    """Every call goes here and nowhere else. Shown so that is visibly true."""
+    number = os.environ.get("DEMO_TO_NUMBER", "").strip()
+    return f"{number[:2]} ••• {number[-4:]}" if len(number) >= 6 else None
 
 
 # --------------------------------------------------------------------------

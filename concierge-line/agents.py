@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -212,17 +213,22 @@ def apply_reservation(payload: dict[str, Any]) -> tuple[dict[str, Any] | None, s
             print(f"[reserve] unknown task_id {task_id!r} and {len(in_flight)} in flight; dropping")
             return None, "Thanks, I've noted that."
 
-    requested_party = (task.get("request") or {}).get("party_size")
+    request = task.get("request") or {}
     result: dict[str, Any] = {
         "reservation_confirmed": _as_bool(payload.get("reservation_confirmed")),
         "confirmed_time": str(payload.get("confirmed_time") or "").strip(),
-        "party_size": _as_int(payload.get("party_size")) or requested_party,
+        "party_size": _as_int(payload.get("party_size")) or request.get("party_size"),
         "name_on_reservation": str(payload.get("name_on_reservation") or "").strip(),
+        "confirmation_code": str(payload.get("confirmation_code") or "").strip(),
+        "price": str(payload.get("price") or "").strip(),
+        "check_in": str(payload.get("check_in") or "").strip(),
         "alternatives_offered": _as_list(payload.get("alternatives_offered")),
         "special_requests_status": str(payload.get("special_requests_status") or "").strip(),
         "confidence": str(payload.get("confidence") or "medium").strip().lower(),
         "notes": str(payload.get("notes") or "").strip(),
     }
+    # What we asked for, so the card can show "asked 10:00 AM -> booked 7:00 PM".
+    result["requested_time"] = pretty_time(request.get("time"))
     if result["confidence"] not in {"high", "medium", "low"}:
         result["confidence"] = "medium"
 
@@ -240,6 +246,44 @@ def apply_reservation(payload: dict[str, Any]) -> tuple[dict[str, Any] | None, s
 # The real outbound call
 # --------------------------------------------------------------------------
 
+AGENT_DIR = Path(__file__).resolve().parent / "agent"
+
+
+def render_agent_text(filename: str, variables: dict[str, str]) -> str:
+    """Read agent/<file> and substitute {{var}} with the call's real values."""
+    try:
+        text = (AGENT_DIR / filename).read_text(encoding="utf-8").lstrip("﻿")
+    except OSError as exc:
+        print(f"[agent] could not read {filename}: {exc}")
+        return ""
+    for name, value in variables.items():
+        text = text.replace("{{" + name + "}}", value)
+    return text.strip()
+
+
+def _override_block(variables: dict[str, str]) -> dict[str, Any] | None:
+    """A fully-resolved prompt to send with the call.
+
+    The agent's dashboard prompt is a config we do not control from here, and
+    when it drifts the symptom is an agent that opens the call not knowing the
+    date, time or party size and has to ask for everything. Sending the
+    resolved prompt with the call makes the dashboard copy irrelevant.
+
+    Requires "overrides" to be enabled on the agent; place_call falls back to
+    calling without this block if ElevenLabs rejects it.
+    """
+    system = render_agent_text("system-prompt.txt", variables)
+    first = render_agent_text("first-message.txt", variables)
+    if not system and not first:
+        return None
+    agent_block: dict[str, Any] = {}
+    if system:
+        agent_block["prompt"] = {"prompt": system}
+    if first:
+        agent_block["first_message"] = first
+    return {"agent": agent_block}
+
+
 async def place_call(task: dict[str, Any]) -> dict[str, Any]:
     """Trigger an ElevenLabs outbound call over the imported Twilio number.
 
@@ -251,21 +295,37 @@ async def place_call(task: dict[str, Any]) -> dict[str, Any]:
         missing = [name for name in _REQUIRED_ELEVENLABS if not os.environ.get(name, "").strip()]
         raise CallError(f"missing env: {', '.join(missing)}")
 
+    variables = build_dynamic_variables(task)
+
+    # Safety rail: every demo call goes to DEMO_TO_NUMBER and nowhere else.
+    # A venue's real phone number is stored on the task for display only and is
+    # never dialled - there is deliberately no code path from it to here.
+    destination = os.environ["DEMO_TO_NUMBER"].strip()
+
+    initiation: dict[str, Any] = {"dynamic_variables": variables}
+    if (override := _override_block(variables)) is not None:
+        initiation["conversation_config_override"] = override
+
     body = {
         "agent_id": os.environ["ELEVENLABS_AGENT_ID"].strip(),
         "agent_phone_number_id": os.environ["ELEVENLABS_AGENT_PHONE_NUMBER_ID"].strip(),
-        "to_number": os.environ["DEMO_TO_NUMBER"].strip(),
-        "conversation_initiation_client_data": {
-            "dynamic_variables": build_dynamic_variables(task),
-        },
+        "to_number": destination,
+        "conversation_initiation_client_data": initiation,
     }
 
+    headers = {"xi-api-key": os.environ["ELEVENLABS_API_KEY"].strip()}
     async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.post(
-            OUTBOUND_CALL_URL,
-            headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"].strip()},
-            json=body,
-        )
+        response = await client.post(OUTBOUND_CALL_URL, headers=headers, json=body)
+
+        # Overrides have to be enabled on the agent. If they aren't, retry
+        # without them rather than losing the call - a call driven by the
+        # dashboard prompt still beats no call at all.
+        if response.status_code >= 400 and "conversation_config_override" in initiation:
+            print(f"[call] override rejected ({response.status_code}); retrying without it. "
+                  f"Enable overrides on the agent so it knows the booking details.")
+            initiation.pop("conversation_config_override")
+            body["conversation_initiation_client_data"] = initiation
+            response = await client.post(OUTBOUND_CALL_URL, headers=headers, json=body)
 
     if response.status_code >= 400:
         raise CallError(f"ElevenLabs {response.status_code}: {response.text[:400]}")
@@ -482,6 +542,9 @@ CANNED_RESULT: dict[str, Any] = {
     "confirmed_time": "8:45 PM",
     "party_size": 2,
     "name_on_reservation": "{traveler}",
+    "confirmation_code": "2146",
+    "price": "$120 total",
+    "check_in": "Main entrance on the terrace side",
     "alternatives_offered": ["7:15 PM", "8:45 PM"],
     "special_requests_status": "Terrace table noted, weather permitting",
     "confidence": "high",

@@ -6,9 +6,32 @@
 <title>Concierge Line</title>
 <style>
   :root{
-    --bg:#0e1116; --panel:#161b22; --panel-2:#1c232d; --line:#262d38;
-    --ink:#e8edf4; --ink-dim:#9aa7b8; --ink-faint:#68758a;
-    --accent:#f0b429; --good:#3ecf8e; --bad:#f2555a; --live:#5b9dff;
+    /* Brand palette. Canvas is the app ground, Sand the card surface. */
+    --bg:#F8F5F0;        /* Canvas  */
+    --panel:#FFFFFF;     /* cards sit above Canvas; Sand is the warm inset */
+    --panel-2:#F2E9DC;   /* Sand    */
+    --line:#E4DACB;      /* warm hairline derived from Sand/Stone */
+
+    --ink:#2C2A28;       /* Ink     */
+    /* Stone (#8A8178) measures 3.8:1 on white - under AA for the 12-13px text
+       it was specified for. Text uses this darkened Stone (5.7:1); pure Stone
+       stays in the system for borders and hover states, where ratio is moot. */
+    --ink-dim:#6E665D;
+    --ink-faint:#6E665D;
+    --stone:#8A8178;
+
+    --clay:#C75B39;      /* brand / primary CTA */
+    --clay-ink:#B04A2B;  /* darkened Clay so white text clears 4.5:1 on the button */
+    --teal:#1F6F6B;      /* agentic "book" actions */
+    --amber:#E8A317;     /* discovery highlights */
+    --success:#2E7D57;   /* confirmed bookings */
+    --alert:#A8392A;     /* derived: negative state, kept in the Clay family */
+
+    /* Tints, for badge and chip fills on a light ground. */
+    --tint-success:#E4F0E9; --tint-alert:#F7E4E0;
+    --tint-amber:#FDF1D8;  --tint-teal:#E2EFEE;
+
+    --accent:var(--amber); --good:var(--success); --bad:var(--alert); --live:var(--teal);
     --radius:14px;
   }
   *{box-sizing:border-box}
@@ -21,24 +44,27 @@
     border-bottom:1px solid var(--line); background:var(--panel);
   }
   .brand{font-size:17px; font-weight:650; letter-spacing:-.01em}
-  .brand span{color:var(--accent)}
+  .brand span{color:var(--clay)}
   .back{
     color:var(--ink-dim); text-decoration:none; font-size:13px;
     padding:5px 11px; border:1px solid var(--line); border-radius:8px;
   }
-  .back:hover{color:var(--ink); border-color:var(--ink-faint)}
+  .back:hover{color:var(--ink); border-color:var(--stone)}
   .spacer{flex:1}
   .mode{
     font-size:12px; padding:5px 11px; border-radius:999px;
     border:1px solid var(--line); color:var(--ink-dim);
   }
-  .mode.live{color:var(--good); border-color:#1e4936}
-  .mode.fake{color:var(--accent); border-color:#4a3a12}
+  .mode.live{color:var(--success); border-color:#BEDACB; background:var(--tint-success)}
+  .mode.fake{color:#8A6100; border-color:#EBD9A8; background:var(--tint-amber)}
 
   main{display:grid; grid-template-columns:minmax(320px,390px) 1fr; gap:18px; padding:18px; align-items:start}
   @media (max-width:900px){ main{grid-template-columns:1fr} }
 
-  .panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    overflow:hidden; box-shadow:0 1px 2px rgba(44,42,40,.04), 0 8px 20px rgba(44,42,40,.03);
+  }
   .panel h2{
     margin:0; padding:13px 17px; font-size:12px; font-weight:600;
     text-transform:uppercase; letter-spacing:.08em; color:var(--ink-faint);
@@ -62,11 +88,13 @@
     padding:9px 15px; background:var(--panel-2); border:1px solid var(--line);
     border-radius:9px; cursor:pointer; font-weight:550;
   }
-  button:hover:not(:disabled){border-color:var(--ink-faint)}
+  button:hover:not(:disabled){border-color:var(--stone)}
   button:disabled{opacity:.45; cursor:not-allowed}
-  button.primary{background:var(--accent); border-color:var(--accent); color:#231a04}
-  button.primary:hover:not(:disabled){filter:brightness(1.08)}
-  button.call{background:var(--good); border-color:var(--good); color:#04231a; font-size:15px; padding:11px 20px}
+  button.primary{background:var(--clay-ink); border-color:var(--clay-ink); color:#fff}
+  button.primary:hover:not(:disabled){filter:brightness(1.07)}
+  /* Teal is the palette's agentic "book" action - the call button is exactly that. */
+  button.call{background:var(--teal); border-color:var(--teal); color:#fff; font-size:15px; padding:11px 20px}
+  button.call:hover:not(:disabled){filter:brightness(1.1)}
 
   /* queue */
   .queue{list-style:none; margin:0; padding:0; max-height:44vh; overflow-y:auto}
@@ -75,20 +103,20 @@
     display:flex; align-items:center; gap:11px;
   }
   .queue li:hover{background:var(--panel-2)}
-  .queue li.sel{background:var(--panel-2); box-shadow:inset 3px 0 0 var(--accent)}
+  .queue li.sel{background:var(--panel-2); box-shadow:inset 3px 0 0 var(--clay)}
   .q-main{flex:1; min-width:0}
   .q-name{font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .q-sub{font-size:12px; color:var(--ink-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 
   .pill{font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid var(--line); color:var(--ink-dim); white-space:nowrap}
-  .pill.dialing,.pill.in_progress{color:var(--live); border-color:#1d3a63; background:#12203a}
+  .pill.dialing,.pill.in_progress{color:var(--teal); border-color:#BFD9D7; background:var(--tint-teal)}
   .pill.dialing::before,.pill.in_progress::before{
     content:""; display:inline-block; width:6px; height:6px; border-radius:50%;
     background:var(--live); margin-right:6px; vertical-align:middle;
     animation:pulse 1.1s ease-in-out infinite;
   }
-  .pill.completed{color:var(--good); border-color:#1e4936}
-  .pill.failed{color:var(--bad); border-color:#5a2024}
+  .pill.completed{color:var(--success); border-color:#BEDACB; background:var(--tint-success)}
+  .pill.failed{color:var(--alert); border-color:#E8C4BD; background:var(--tint-alert)}
   @keyframes pulse{0%,100%{opacity:1; transform:scale(1)}50%{opacity:.35; transform:scale(.8)}}
 
   /* result hero */
@@ -98,8 +126,9 @@
     font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
     padding:7px 14px; border-radius:9px; white-space:nowrap;
   }
-  .badge.yes{background:#12331f; color:var(--good); border:1px solid #1e4936}
-  .badge.no{background:#33151a; color:var(--bad); border:1px solid #5a2024}
+  /* Success on its own tint is 4.3:1; this darker shade clears AA at 13px bold. */
+  .badge.yes{background:var(--tint-success); color:#215B41; border:1px solid #BEDACB}
+  .badge.no{background:var(--tint-alert); color:var(--alert); border:1px solid #E8C4BD}
   .badge.pending{background:var(--panel-2); color:var(--ink-faint); border:1px solid var(--line)}
   .venue-name{font-size:23px; font-weight:680; letter-spacing:-.02em; margin:0 0 3px}
   .venue-sub{color:var(--ink-faint); font-size:13px}
@@ -108,8 +137,14 @@
   .when .u{font-size:12px; color:var(--ink-faint); margin-top:3px}
   .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:15px}
   .chip{font-size:12px; padding:5px 11px; border-radius:999px; background:var(--panel-2); border:1px solid var(--line); color:var(--ink-dim)}
-  .chip.alt{background:#2c2408; color:var(--accent); border-color:#4a3a12}
-  .chip.conf-low{color:var(--bad); border-color:#5a2024}
+  .chip.alt{background:var(--tint-amber); color:#8A6100; border-color:#EBD9A8; font-weight:600}
+  .chip.conf-low{color:var(--alert); border-color:#E8C4BD; background:var(--tint-alert)}
+  .moved{
+    margin-top:14px; padding:9px 13px; border-radius:9px;
+    background:var(--tint-amber); border:1px solid #EBD9A8; color:#8A6100; font-size:13.5px;
+  }
+  .moved s{opacity:.7}
+  .moved strong{color:var(--ink)}
 
   dl.facts{margin:0; padding:6px 24px 20px}
   dl.facts div{display:grid; grid-template-columns:160px 1fr; gap:14px; padding:10px 0; border-bottom:1px solid var(--line)}
@@ -127,7 +162,8 @@
     flex:0 0 58px; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
     color:var(--ink-faint); padding-top:2px;
   }
-  .turn.agent .who{color:var(--accent)}
+  /* Amber is too pale for 11px uppercase on Sand; Clay carries the brand at size. */
+  .turn.agent .who{color:var(--clay)}
   .turn .what{flex:1; color:var(--ink)}
   .turn.caller .what{color:var(--ink-dim)}
 
@@ -146,6 +182,7 @@
   <div class="brand">Concierge<span>·</span>Line</div>
   <a class="back" id="backlink" href="#" hidden>&larr; Roadio</a>
   <div class="spacer"></div>
+  <div class="mode" id="dest" hidden></div>
   <div class="mode" id="mode">connecting…</div>
 </header>
 
@@ -223,6 +260,10 @@ if (MAIN_APP_URL) {
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
+// Escape first, then promote **key info** to bold. Never the other way round.
+const bold = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+const plain = (s) => String(s ?? "").replace(/\*\*/g, "");
+
 const fmtDate = (iso) => {
   if (!iso) return "";
   const d = new Date(iso + "T00:00:00");
@@ -241,6 +282,11 @@ const fmtTime = (hhmm) => {
 async function loadHealth() {
   try {
     const h = await (await fetch("/api/health")).json();
+    if (h.demo_to_number) {
+      const d = $("dest");
+      d.textContent = `all calls → ${h.demo_to_number}`;
+      d.hidden = false;
+    }
     const el = $("mode");
     if (h.fake_call_mode) {
       el.textContent = "Demo mode · no telephony";
@@ -332,6 +378,9 @@ function renderDetail() {
       ${task.error ? `<div class="err">${esc(task.error)}</div>` : ""}`;
   } else {
     const confirmed = r.reservation_confirmed === true;
+    // Flag a time change loudly - burying it is how someone arrives an hour early.
+    const moved = confirmed && r.requested_time && r.confirmed_time &&
+      r.requested_time.toLowerCase() !== r.confirmed_time.toLowerCase();
     const bigTime = confirmed && r.confirmed_time
       ? `<div class="when"><div class="n">${esc(r.confirmed_time)}</div>
          <div class="u">${fmtDate(task.request?.date)}</div></div>` : "";
@@ -345,6 +394,8 @@ function renderDetail() {
           </div>
           ${bigTime}
         </div>
+        ${moved ? `<div class="moved">You asked for <s>${esc(r.requested_time)}</s> &rarr;
+           booked <strong>${esc(r.confirmed_time)}</strong></div>` : ""}
         <div class="chips">
           ${(r.alternatives_offered || []).map((a) => `<span class="chip alt">also offered ${esc(a)}</span>`).join("")}
           <span class="chip ${r.confidence === "low" ? "conf-low" : ""}">confidence: ${esc(r.confidence)}</span>
@@ -358,11 +409,15 @@ function renderDetail() {
   let facts = "";
   if (r) {
     const rows = [
-      ["Special request", r.special_requests_status],
-      ["Good to know", r.notes],
+      ["Confirmation", r.confirmation_code, true],
+      ["Price", r.price, true],
+      ["Check in at", r.check_in, true],
+      ["Booked under", r.name_on_reservation, false],
+      ["Special request", r.special_requests_status, false],
+      ["Good to know", r.notes, false],
     ].filter(([, v]) => v);
-    facts = `<dl class="facts">${rows.map(([k, v]) =>
-      `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`;
+    facts = `<dl class="facts">${rows.map(([k, v, key]) =>
+      `<div><dt>${k}</dt><dd>${key ? `<strong>${esc(v)}</strong>` : esc(v)}</dd></div>`).join("")}</dl>`;
   }
 
   $("result").innerHTML = hero + facts;
@@ -389,7 +444,7 @@ function renderDetail() {
   const hasNote = Boolean(task.summary_markdown);
   $("note-panel").hidden = !r;
   if (r) {
-    $("note").textContent = hasNote ? task.summary_markdown : "Writing it up…";
+    $("note").innerHTML = hasNote ? bold(task.summary_markdown) : "Writing it up…";
     $("note-src").textContent = task.summary_source === "claude"
       ? "Written by Claude from the confirmed booking."
       : (hasNote ? "Template note (no model call needed)." : "");
@@ -399,7 +454,9 @@ function renderDetail() {
 
 $("n-copy").onclick = async () => {
   try {
-    await navigator.clipboard.writeText($("note").textContent);
+    // Copy without the asterisks - this gets pasted into a message, not markdown.
+    const task = tasks.find((t) => t.id === selectedId);
+    await navigator.clipboard.writeText(plain(task?.summary_markdown ?? $("note").textContent));
     $("n-copy").textContent = "Copied";
     setTimeout(() => ($("n-copy").textContent = "Copy"), 1400);
   } catch {
