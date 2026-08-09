@@ -16,6 +16,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [linkCode, setLinkCode] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [chatKey, setChatKey] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
 
@@ -113,6 +114,26 @@ export default function App() {
     }
   }
 
+  // Everything pinned to the old transcript has to go with it: carousels are
+  // keyed by message index, and the Chat's own draft and map overlay are
+  // internal, which is what the remount key clears.
+  const reset = async () => {
+    try {
+      setSnapshot(await api.reset())
+      setCarousels({})
+      setCardStatus({})
+      setSampleData(false)
+      setLinkCode(null)
+      setLoadingIndex(null)
+      setError(null)
+      setSheetOpen(false)
+      setChatKey((n) => n + 1)
+      showToast('Started a new trip')
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
   const getLinkCode = async () => {
     try {
       const result = await api.linkCode()
@@ -171,8 +192,8 @@ export default function App() {
       )}
 
       <Chat
+        key={chatKey}
         messages={snapshot.messages}
-        greeting={snapshot.greeting}
         phase={snapshot.phase}
         busy={busy}
         error={error}
@@ -198,6 +219,7 @@ export default function App() {
         trip={snapshot.trip}
         preferences={snapshot.preferences}
         onRemove={remove}
+        onReset={reset}
         linked={snapshot.user.linked}
         linkCode={linkCode}
         onGetLinkCode={getLinkCode}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Itinerary } from './Itinerary'
 import type { ItineraryDay, Preference, Trip } from '../types'
@@ -9,6 +10,7 @@ export function ItinerarySheet({
   trip,
   preferences,
   onRemove,
+  onReset,
   linked,
   linkCode,
   onGetLinkCode,
@@ -19,10 +21,20 @@ export function ItinerarySheet({
   trip: Trip | null
   preferences: Preference[]
   onRemove: (id: number) => void
+  onReset: () => Promise<void>
   linked: boolean
   linkCode: string | null
   onGetLinkCode: () => void
 }) {
+  const [confirming, setConfirming] = useState(false)
+  const [resetting, setResetting] = useState(false)
+
+  // Never leave the sheet armed: reopening it should not be one tap away from
+  // discarding the trip.
+  useEffect(() => {
+    if (!open) setConfirming(false)
+  }, [open])
+
   if (!open) return null
 
   return (
@@ -54,6 +66,41 @@ export function ItinerarySheet({
               )}
             </div>
           )}
+
+          <div className="reset-zone">
+            {confirming ? (
+              <>
+                <p className="reset-warning">
+                  This clears the itinerary, everything Roadio has learned about you, and the
+                  chat. Any bookings you've made are kept.
+                </p>
+                <div className="reset-actions">
+                  <button
+                    className="btn-danger"
+                    disabled={resetting}
+                    onClick={async () => {
+                      setResetting(true)
+                      try {
+                        await onReset()
+                      } finally {
+                        setResetting(false)
+                        setConfirming(false)
+                      }
+                    }}
+                  >
+                    {resetting ? 'Starting over...' : 'Yes, start over'}
+                  </button>
+                  <button className="btn-quiet" disabled={resetting} onClick={() => setConfirming(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button className="btn-quiet" onClick={() => setConfirming(true)}>
+                Start a new trip
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

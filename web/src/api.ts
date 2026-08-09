@@ -24,6 +24,8 @@ export const api = {
       body: JSON.stringify({ message }),
     }),
 
+  reset: () => request<Snapshot>('/api/reset', { method: 'POST' }),
+
   recommendations: () =>
     request<{ recommendations: Recommendation[]; sampleData?: boolean }>('/api/recommendations'),
 

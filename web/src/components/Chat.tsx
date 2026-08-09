@@ -13,7 +13,6 @@ const PROMPTS: Record<Phase, string[]> = {
 
 export function Chat({
   messages,
-  greeting,
   phase,
   busy,
   error,
@@ -28,7 +27,6 @@ export function Chat({
   footer,
 }: {
   messages: ChatMessage[]
-  greeting: string
   phase: Phase
   busy: boolean
   error: string | null
@@ -71,8 +69,6 @@ export function Chat({
   return (
     <div className="pane">
       <div className="chat-log" ref={logRef}>
-        {messages.length === 0 && <div className="bubble assistant">{greeting}</div>}
-
         {messages.map((message, index) => {
           const cards = carousels[index]
           const showSkeleton = loadingIndex === index && !cards

@@ -8,6 +8,7 @@ import { config } from '../config.js'
 import { describeError, logger } from '../util/log.js'
 import type { KeyedMutex } from '../util/mutex.js'
 import {
+  addMessage,
   addPlan,
   createBooking,
   createLinkCode,
@@ -19,6 +20,7 @@ import {
   listOpenPlans,
   listPreferences,
   recentMessages,
+  resetTraveler,
   setPlanStatus,
   updateBooking,
   type User,
@@ -31,6 +33,15 @@ import { bookingState, startBooking } from '../concierge/client.js'
 const log = logger('http')
 
 const SESSION_COOKIE = 'roadio_session'
+
+/**
+ * Seed a transcript with the assistant's opening question. It is a real first
+ * turn rather than UI chrome, so it survives a reload and stays in the log once
+ * the traveler answers.
+ */
+function openConversation(userId: string): void {
+  addMessage(userId, 'assistant', greeting())
+}
 
 /** Typed context so `c.get('user')` is a User rather than unknown. */
 type Env = { Variables: { user: User } }
@@ -48,6 +59,7 @@ export function createServer(mutex: KeyedMutex) {
     if (!user) {
       user = createUser()
       const fresh = createSession(user.id)
+      openConversation(user.id)
       setCookie(c, SESSION_COOKIE, fresh, {
         httpOnly: true,
         sameSite: 'Lax',
@@ -86,6 +98,20 @@ export function createServer(mutex: KeyedMutex) {
 
     // snapshot() recomputes phase from the freshly written state.
     return c.json({ reply: result.reply, ...snapshot(user) })
+  })
+
+  app.post('/api/reset', async (c) => {
+    const user = c.get('user')
+
+    // Same lock as a chat turn: a reset landing mid-turn would otherwise wipe
+    // the state that turn is about to write into.
+    await mutex.run(user.id, async () => {
+      resetTraveler(user.id)
+      openConversation(user.id)
+    })
+
+    log.info(`traveler ${user.id} started a new trip`)
+    return c.json(snapshot(user))
   })
 
   app.get('/api/recommendations', async (c) => {
@@ -369,7 +395,6 @@ function snapshot(user: User) {
   return {
     user: { id: user.id, linked: Boolean(user.telegramChatId) },
     phase: phaseFor(stay),
-    greeting: greeting(),
     trip: stay
       ? {
           city: stay.city,
