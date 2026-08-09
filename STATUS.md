@@ -2,8 +2,9 @@
 
 Last updated: 2026-08-09.
 
-`main` compiles, builds, and passes 82 smoke checks. The Telegram concierge works.
-The web app is not started.
+Backend and web app both compile, build, and pass 82 smoke checks. The MVP flow -
+chat onboarding to recommendations to a day-by-day itinerary - runs end to end
+with no credentials at all.
 
 ## MVP target
 
@@ -16,84 +17,73 @@ stage. No third-party integrations.
 
 | MVP piece | State |
 |---|---|
+| Chat onboarding (destination + days) | **Done**, verified through the API |
 | Trip memory: destination, days, preferences | **Done and tested** |
+| Recommended activities with reasons | **Done**, verified through the API |
+| Accept / pass, with passed items excluded from future picks | **Done**, verified through the API |
+| Day-by-day itinerary flow map | **Done**, verified through the API |
 | Web identity: sessions, Telegram linking, user merge | **Done and tested** |
 | Activity catalogue | **Done and tested** (sample provider, no credentials) |
-| Itinerary items with day index, accept/pass | **Data layer done and tested**; no API or UI |
-| Booking hold and confirm | **Done and tested** end to end, but descoped from the MVP |
-| Telegram concierge and proactive engine | **Done and tested** |
-| HTTP API | **Not started** |
-| Chat onboarding endpoint | **Not started** |
-| Recommendation ranking | **Not started** |
-| React frontend | **Not started** |
-| Telegram `/link` code redemption command | **Not started** (the repo function exists and is tested) |
+| Telegram concierge and proactive engine | **Done**, untested against a live model |
+| Booking hold and confirm | Built and tested, but descoped from the MVP |
+| Telegram `/link` command to redeem a code | **Not started** (the repo function exists and is tested) |
+| LLM enrichment of chat parsing | **Not started** |
 
-## What this pass did
+## Running it
 
-Unbroke the refactor and put the previously-untested data layer under test.
+```bash
+npm run dev        # API on :8787 (and the bot, if a token is set)
+npm run web:dev    # SPA on :5173, proxies /api to :8787
+```
 
-- `TELEGRAM_BOT_TOKEN` is now optional, so the web app will be able to run alone.
-- Dropped the Viator client. Only the sample provider ships. The
-  `ActivityProvider` interface stays, so a real supplier is a swap rather than a
-  rewrite; the Viator client is recoverable from `02e9c06` if wanted.
-- `plans` gained `dayIndex` plus a small activity snapshot (provider, product
-  code, price, duration), so the itinerary renders without re-querying the
-  catalogue and records what was offered at the time.
-- Regenerated the migration. Ten typecheck errors are gone.
+Open http://localhost:5173 and say something like "Lisbon for 5 days".
 
-**Three bugs found and fixed while doing it:**
+Neither an Anthropic key nor a Telegram token is required for the web flow.
 
-1. The smoke test was operating on a phantom user. It still keyed everything on
-   the Telegram chat id after user ids became opaque, so every assertion past the
-   first was reading and writing a user that did not exist.
-2. Web-only mode exited immediately and looked like a crash. A bare promise does
-   not hold Node's event loop open. It now says plainly that there is nothing to
-   serve yet and exits 0; the HTTP server will hold the loop open when it lands.
-3. `addPlan` did not accept the new itinerary fields, so day indexes were
-   silently dropped.
+## The one architectural call worth knowing
 
-## Test coverage
+**Chat onboarding is deterministic, not a model call.**
 
-`npm run smoke` - 82 checks, no credentials, real Open-Meteo calls.
+Free text is normally a model call, but the two things onboarding must capture -
+a place and a duration - are narrow enough to parse in code, and the place can be
+*verified* by geocoding rather than guessed. So `src/onboarding/parse.ts` is the
+primary path: regex for duration, party size, budget and interest keywords, and a
+real geocoding lookup to confirm the destination exists.
 
-Newly covered, all previously unexecuted:
+That keeps the core flow working with no credentials, costs nothing per turn, and
+gives a deterministic path to test. The model layers on top to catch what this
+misses.
 
-- Opaque identity, and that a Telegram chat id is now an attribute rather than a key
-- Web sessions: create, resolve, reject unknown tokens, survive a merge
-- Link codes: issue, readable format, reissue retires the previous code, reject
-  unknown, reject spent
-- **The user merge** - the piece flagged as highest-risk. Verified that rows move
-  across tables, that both sides' preferences survive, that exactly one current
-  stay remains, that the chat id lands on the survivor, that the old traveler is
-  deleted, and that the browser session still resolves afterwards.
-- Sample catalogue: determinism across calls, budget ceiling, interest ranking,
-  product code round-trip, any destination yields results
-- Full booking path: availability, hold, confirm, persistence, and that a spent
-  hold cannot be replayed into a double booking
-- Itinerary items: day index stored, passed-on items hidden from the itinerary
-  and from the model's context but retained
+**What it misses, concretely:** negation. Tested with *"I love food and street
+markets, nothing too touristy"*, it records `like: food` and silently drops
+"nothing too touristy". Anything requiring inference rather than matching needs
+the model pass.
 
-## Deliberate gaps
+## Verified, and how
 
-**Nothing that calls the model has ever run.** There are no Anthropic credentials
-on this machine. The extraction pass, reply agent, nudge agent, journal and photo
-captioning all typecheck against the SDK and are structurally exercised, but no
-model call has been made. The smoke test covers everything around them.
+**82 smoke checks** (`npm run smoke`) - no credentials, real Open-Meteo calls.
+Covers migrations, opaque identity, web sessions, link codes and the user merge,
+the sample catalogue, the full booking path, the proactive gates, per-traveler
+serialisation, and the conversation window.
 
-This matters more now: a chat-based onboarding is inherently a model call, so the
-MVP's primary path cannot be verified here. A deterministic fallback parser for
-simple inputs (`"Lima for 5 days"`) is planned so there is a testable path and
-graceful degradation when the API is unavailable.
+**The MVP flow was driven through the API by hand** before shipping: chat turn
+resolving "Lisbon for 5 days" to a geocoded destination, recommendations with
+grounded reasons, accept landing on the chosen day, pass removing the card, and
+both accepted and passed items confirmed absent from subsequent recommendations.
 
-**Bookings are built but unused by the MVP.** The table, the provider methods and
-the tests all exist. Left in place rather than deleted - it is the next stage.
+**The frontend has never been looked at.** The Chrome extension was not connected,
+so there is no visual confirmation that it renders correctly. What *is* verified:
+both typechecks pass, all nine modules transform cleanly through Vite, and the
+production build succeeds. Layout, spacing and visual polish are unverified.
+
+**Nothing that calls the model has ever run.** No Anthropic credentials on this
+machine. The extraction pass, reply agent, nudge agent, journal and photo
+captioning all typecheck against the SDK but have never made a request.
 
 ## Next
 
-1. HTTP API: session cookie middleware, trip state, chat turn, recommendations,
-   accept/pass, itinerary.
-2. Chat onboarding: reuse the existing extraction pass, add an onboarding-tuned
-   agent, add the deterministic fallback parser.
-3. Recommendation ranking against memory, excluding already-decided products.
-4. React frontend: chat, recommendations, day-by-day itinerary map.
-5. Telegram command to redeem a link code.
+1. Look at the frontend and fix whatever is visually wrong.
+2. Telegram command to redeem a link code, closing the web-to-chat loop.
+3. LLM enrichment on chat turns: run the model when the deterministic parser
+   comes back empty, so negation and nuance are caught.
+4. Bookings, when they come back into scope.

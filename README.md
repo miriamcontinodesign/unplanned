@@ -1,20 +1,22 @@
 # Roadio
 
-> The web app is in progress. The Telegram concierge below works and is tested;
-> the data layer for the web app is in and tested, but the HTTP API and frontend
-> are not started. See [STATUS.md](./STATUS.md).
+A travel concierge with two front doors: a web app you plan a trip in, and a Telegram thread that travels with you. Both read the same memory.
 
-A travel concierge that lives in a Telegram thread.
-It learns where you are from what you tell it, remembers the shape of your trip, and speaks up unprompted when there's something worth doing.
-
-Ask it anything and it answers with your actual context in mind - where you're staying, what the weather is doing, how long you've got left, what you've already told it you hate.
+Tell it where you're going and for how long, and it builds a day-by-day itinerary from activities picked against what it knows about you. On the road, it answers questions with your actual context in mind and speaks up unprompted when something is worth doing.
 
 ## Status
 
-The v1 core is built: **location memory and proactive suggestions**.
-Journal capture (notes and photos) and a `/journal` summary are in, but basic.
+Web MVP runs end to end with no credentials: chat onboarding, recommendations, accept/pass, day-by-day itinerary. Telegram concierge is built but has never run against a live model. See [STATUS.md](./STATUS.md) for what is and is not verified.
 
-What is not built yet is listed under [Not built yet](#not-built-yet).
+## Running it
+
+```bash
+npm install
+npm run dev        # API on :8787 (plus the bot, if TELEGRAM_BOT_TOKEN is set)
+npm run web:dev    # SPA on :5173, proxies /api to :8787
+```
+
+Open http://localhost:5173 and say "Lisbon for 5 days". No API keys needed for the web flow.
 
 ## How it works
 
@@ -50,6 +52,11 @@ scheduler ──> gates ──> nudge agent ──> send_nudge? ──> Telegram
 | `src/proactive/nudge.ts` | The deterministic gates, then the decision agent. |
 | `src/db/schema.ts` | Trip state: stays, plans, preferences, journal, nudges. |
 | `src/tools/` | `get_weather`, `web_search`, `send_nudge`. |
+| `src/onboarding/parse.ts` | Deterministic chat parsing - the primary onboarding path, no model required. |
+| `src/onboarding/recommend.ts` | Ranking the catalogue against trip memory. |
+| `src/http/server.ts` | REST API and the session cookie. |
+| `src/providers/` | The activity catalogue behind a swappable interface. |
+| `web/` | Vite + React SPA: chat, suggestions, itinerary flow map. |
 
 ## Setup
 
