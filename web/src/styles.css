@@ -364,37 +364,6 @@ button {
   font-size: 15px;
 }
 
-.linked-chip {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--muted);
-  background: var(--border-soft);
-  border: 1px solid var(--border);
-  padding: 4px 9px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.linked-chip.button {
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.linked-chip.button:hover {
-  background: var(--amber-soft);
-  border-color: var(--amber-border);
-  color: var(--ink);
-}
-
-.linked-chip.code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: var(--ink);
-  background: var(--amber-soft);
-  border-color: var(--amber-border);
-}
-
 .sample-banner {
   display: flex;
   align-items: center;

@@ -8,6 +8,7 @@ data/
 
 # concierge-line (Python voice module)
 concierge-line/venv/
+concierge-line/.venv/
 concierge-line/.env
 concierge-line/store.json
 concierge-line/store.json.tmp
