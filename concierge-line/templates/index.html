@@ -193,8 +193,16 @@
       <h2>Book something</h2>
       <div class="body">
         <div class="field">
-          <label for="f-name">Restaurant, bar or tour</label>
-          <input id="f-name" placeholder="The Local">
+          <label for="f-name">Where</label>
+          <input id="f-name" placeholder="Manhattan Kayak Company">
+        </div>
+        <div class="field">
+          <label for="f-kind">What kind</label>
+          <select id="f-kind">
+            <option value="restaurant">Restaurant</option>
+            <option value="bar">Bar</option>
+            <option value="tour">Tour or activity</option>
+          </select>
         </div>
         <div class="row3">
           <div class="field"><label for="f-date">Date</label><input id="f-date" type="date" value="2026-08-13"></div>
@@ -268,6 +276,14 @@ const fmtDate = (iso) => {
   if (!iso) return "";
   const d = new Date(iso + "T00:00:00");
   return isNaN(d) ? iso : d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+};
+
+// A kayak tour has no tables. Saying so anyway reads as invented detail.
+const partyLabel = (task, n) => {
+  const kind = task?.venue?.kind || "restaurant";
+  if (kind === "tour") return `${esc(n)} places`;
+  if (kind === "bar") return `${esc(n)} people`;
+  return `Table for ${esc(n)}`;
 };
 
 const fmtTime = (hhmm) => {
@@ -390,7 +406,7 @@ function renderDetail() {
           <span class="badge ${confirmed ? "yes" : "no"}">${confirmed ? "Booked" : "Not available"}</span>
           <div style="flex:1; min-width:170px">
             <h3 class="venue-name">${esc(task.venue?.name)}</h3>
-            <div class="venue-sub">Table for ${esc(r.party_size || task.request?.party_size)}${r.name_on_reservation ? " &middot; under " + esc(r.name_on_reservation) : ""}</div>
+            <div class="venue-sub">${partyLabel(task, r.party_size || task.request?.party_size)}${r.name_on_reservation ? " &middot; under " + esc(r.name_on_reservation) : ""}</div>
           </div>
           ${bigTime}
         </div>
@@ -504,7 +520,7 @@ $("f-go").onclick = async () => {
   const name = $("f-name").value.trim();
   if (!name) { $("f-name").focus(); return; }
   const body = {
-    venue: { name, kind: "restaurant", address: "", phone: "" },
+    venue: { name, kind: $("f-kind").value, address: "", phone: "" },
     request: {
       date: $("f-date").value,
       time: $("f-time").value,

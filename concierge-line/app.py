@@ -321,10 +321,7 @@ async def simulate(task_id: str) -> dict[str, Any]:
     dies. Never shown on stage.
     """
     task = _task_or_404(task_id)
-    canned = dict(agents.CANNED_RESULT)
-    canned["name_on_reservation"] = (task.get("traveler") or {}).get("name") or agents.traveler_name()
-    canned["party_size"] = (task.get("request") or {}).get("party_size") or 2
-    agents.apply_reservation({"task_id": task_id, **canned})
+    agents.apply_reservation({"task_id": task_id, **agents.canned_result_for(task)})
     store.set_status(task_id, "completed")
     await _attach_summary(task_id)  # await, so the note is present in this response
     return _task_or_404(task_id)

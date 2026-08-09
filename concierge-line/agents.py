@@ -509,10 +509,19 @@ async def run_live_call(task_id: str) -> None:
 
 _LEAD_IN = 2.5
 
-# Paced so the tool call lands ~25s after the presenter hits Call: they fire
-# it, keep talking, and the confirmation appears mid-sentence.
-_FAKE_SCRIPT: list[tuple[float, str, str]] = [
-    (0.0, "agent", "Hi, this is Iris, an AI assistant calling on behalf of {traveler}. I'm hoping to make a reservation for {party} on {date} — do you have a quick moment?"),
+# Fires with six turns still to come, so the confirmation visibly lands while
+# the room can still hear talking. That simultaneity is the whole demo - if it
+# lands after the last line, the moment is gone.
+# 22.5 script + 2.5 lead-in = ~25s after the presenter hits Call.
+_FAKE_RESULT_AT = 22.5
+
+# Demo data is per venue kind. A single restaurant-flavoured script leaks
+# "table for two" and "terrace" into a kayaking booking, which reads as the
+# agent inventing facts the call never produced - the one thing this product
+# must never appear to do.
+
+_RESTAURANT_SCRIPT: list[tuple[float, str, str]] = [
+    (0.0, "agent", "Hi, this is Iris, an AI assistant calling on behalf of {traveler}. I'm hoping to book a table for {party} on {date} — do you have a quick moment?"),
     (3.5, "caller", "Of course, let me pull up the book."),
     (5.0, "agent", "Thank you. We were hoping for around {time}."),
     (7.5, "caller", "Let's see... {time} is fully committed, I'm afraid."),
@@ -522,34 +531,79 @@ _FAKE_SCRIPT: list[tuple[float, str, str]] = [
     (17.0, "caller", "Wonderful. And the name for the booking?"),
     (18.5, "agent", "It's under {traveler}."),
     (20.5, "caller", "Got it. Table for {party} at eight forty-five."),
-    (23.5, "agent", "Perfect. One more thing — is there any chance of a table outside?"),
-    (26.0, "caller", "I've noted a preference for the terrace. Weather permitting."),
-    (28.5, "agent", "Wonderful. Anything we should know before arriving?"),
-    (30.5, "caller", "Just come five minutes early, and we hold tables fifteen minutes."),
-    (33.0, "agent", "Understood. Thank you so much for your help."),
-    (35.5, "caller", "My pleasure. See you then."),
-    (37.5, "agent", "See you then. Goodbye."),
+    (23.5, "agent", "Thank you. Is there a confirmation number for that?"),
+    (26.0, "caller", "Yes, it's four four one two."),
+    (28.5, "agent", "Four four one two. Anything we should know before arriving?"),
+    (31.0, "caller", "Just come five minutes early, and we hold tables fifteen minutes."),
+    (34.0, "agent", "Understood. Thank you so much for your help."),
+    (36.5, "caller", "My pleasure. See you then."),
+    (38.5, "agent", "See you then. Goodbye."),
 ]
 
-# Fires with six turns still to come, so the confirmation visibly lands while
-# the room can still hear talking. That simultaneity is the whole demo - if it
-# lands after the last line, the moment is gone.
-# 22.5 script + 2.5 lead-in = ~25s after the presenter hits Call.
-_FAKE_RESULT_AT = 22.5
+_TOUR_SCRIPT: list[tuple[float, str, str]] = [
+    (0.0, "agent", "Hi, this is Iris, an AI assistant calling on behalf of {traveler}. I'd like to book {party} places on {date} — do you have a quick moment?"),
+    (3.5, "caller", "Sure, let me check the schedule."),
+    (5.0, "agent", "Thank you. We were hoping for the {time} departure."),
+    (7.5, "caller", "The {time} one is fully booked, I'm afraid."),
+    (10.0, "agent", "No problem. What departures do you have that day?"),
+    (12.5, "caller", "There's one at eleven thirty, and one at two o'clock."),
+    (15.0, "agent", "Eleven thirty would be great, thank you."),
+    (17.0, "caller", "Great. And the name for the booking?"),
+    (18.5, "agent", "It's under {traveler}."),
+    (20.5, "caller", "Got it — {party} places on the eleven thirty."),
+    (23.5, "agent", "Thank you. Is there a booking reference for that?"),
+    (26.0, "caller", "Yes, it's eight eight zero three."),
+    (28.5, "agent", "Eight eight zero three. Where should they check in?"),
+    (31.0, "caller", "At the dock desk, fifteen minutes before. Bring a change of clothes."),
+    (34.0, "agent", "Understood. Thank you so much for your help."),
+    (36.5, "caller", "No problem. See you then."),
+    (38.5, "agent", "See you then. Goodbye."),
+]
 
-CANNED_RESULT: dict[str, Any] = {
+_RESTAURANT_RESULT: dict[str, Any] = {
     "reservation_confirmed": True,
     "confirmed_time": "8:45 PM",
-    "party_size": 2,
-    "name_on_reservation": "{traveler}",
-    "confirmation_code": "2146",
-    "price": "$120 total",
-    "check_in": "Main entrance on the terrace side",
+    "confirmation_code": "4412",
+    "price": "",
+    "check_in": "",
     "alternatives_offered": ["7:15 PM", "8:45 PM"],
-    "special_requests_status": "Terrace table noted, weather permitting",
+    "special_requests_status": "",
     "confidence": "high",
     "notes": "Arrive five minutes early. They hold tables for fifteen minutes.",
 }
+
+_TOUR_RESULT: dict[str, Any] = {
+    "reservation_confirmed": True,
+    "confirmed_time": "11:30 AM",
+    "confirmation_code": "8803",
+    "price": "",
+    "check_in": "Dock desk, 15 minutes before departure",
+    "alternatives_offered": ["11:30 AM", "2:00 PM"],
+    "special_requests_status": "",
+    "confidence": "high",
+    "notes": "Bring a change of clothes.",
+}
+
+
+def _kind_of(task: dict[str, Any]) -> str:
+    kind = ((task.get("venue") or {}).get("kind") or "restaurant").strip().lower()
+    return kind if kind in {"restaurant", "bar", "tour"} else "restaurant"
+
+
+def script_for(task: dict[str, Any]) -> list[tuple[float, str, str]]:
+    return _TOUR_SCRIPT if _kind_of(task) == "tour" else _RESTAURANT_SCRIPT
+
+
+def canned_result_for(task: dict[str, Any]) -> dict[str, Any]:
+    """Demo result matching the venue, and the task's own party size and name.
+
+    Nothing here invents a detail the matching script did not say out loud.
+    """
+    base = _TOUR_RESULT if _kind_of(task) == "tour" else _RESTAURANT_RESULT
+    result = dict(base)
+    result["party_size"] = (task.get("request") or {}).get("party_size") or 2
+    result["name_on_reservation"] = (task.get("traveler") or {}).get("name") or traveler_name()
+    return result
 
 
 def _speed() -> float:
@@ -580,13 +634,11 @@ async def run_fake_call(task_id: str) -> None:
         "time": variables["time_pretty"],
         "venue": variables["venue_name"],
     }
-    canned = dict(CANNED_RESULT)
-    canned["name_on_reservation"] = variables["traveler_name"]
-    canned["party_size"] = (task.get("request") or {}).get("party_size") or 2
+    canned = canned_result_for(task)
 
     # Merge the tool call into the timeline so it fires mid-conversation
     # rather than after the last line.
-    timeline: list[tuple[float, str, str | None]] = list(_FAKE_SCRIPT)
+    timeline: list[tuple[float, str, str | None]] = list(script_for(task))
     timeline.append((_FAKE_RESULT_AT, "__tool__", None))
     timeline.sort(key=lambda item: item[0])
 

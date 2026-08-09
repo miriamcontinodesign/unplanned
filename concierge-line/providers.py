@@ -220,9 +220,14 @@ def deterministic_note(task: dict[str, Any]) -> str:
         time_phrase = f" at **{at_time}**" if at_time else ""
         held_by = result.get("name_on_reservation") or traveler
         under = f" under **{held_by}**" if held_by else ""
+        kind = (venue.get("kind") or "restaurant").strip().lower()
+        booked_for = {
+            "tour": f"**{party}** places",
+            "bar": f"**{party}** people",
+        }.get(kind, f"Table for **{party}**")
         lines = [
             f"{greeting}you're booked at **{name}**.",
-            f"Table for **{party}** on **{when}**{time_phrase}{under}.",
+            f"{booked_for} on **{when}**{time_phrase}{under}.",
         ]
 
         # Say so when they didn't get the time they asked for - burying that
