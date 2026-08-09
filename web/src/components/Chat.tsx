@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ChatMessage, Phase } from '../types'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Send } from 'lucide-react'
+import { RecommendationCard } from './RecommendationCard'
+import { formatTime } from '../format'
+import type { ChatMessage, Phase, Recommendation } from '../types'
 
 const PROMPTS: Record<Phase, string[]> = {
   need_destination: ['Lisbon for 5 days', 'Tokyo, 8 days', 'Mexico City'],
@@ -14,6 +17,13 @@ export function Chat({
   busy,
   error,
   onSend,
+  carousels,
+  cardStatus,
+  tripDays,
+  loadingIndex,
+  onAccept,
+  onPass,
+  footer,
 }: {
   messages: ChatMessage[]
   greeting: string
@@ -21,13 +31,20 @@ export function Chat({
   busy: boolean
   error: string | null
   onSend: (text: string) => void
+  carousels: Record<number, Recommendation[]>
+  cardStatus: Record<string, 'added' | 'passed'>
+  tripDays: number
+  loadingIndex: number | null
+  onAccept: (productCode: string, day: number) => void
+  onPass: (productCode: string) => void
+  footer?: ReactNode
 }) {
   const [draft, setDraft] = useState('')
   const logRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages.length, busy])
+  }, [messages.length, busy, loadingIndex])
 
   const submit = (text: string) => {
     const trimmed = text.trim()
@@ -41,11 +58,39 @@ export function Chat({
       <div className="chat-log" ref={logRef}>
         {messages.length === 0 && <div className="bubble assistant">{greeting}</div>}
 
-        {messages.map((message, index) => (
-          <div key={index} className={`bubble ${message.role}`}>
-            {message.text}
-          </div>
-        ))}
+        {messages.map((message, index) => {
+          const cards = carousels[index]
+          const showSkeleton = loadingIndex === index && !cards
+
+          return (
+            <div key={index} className={`msg-group ${message.role}`}>
+              <div className={`bubble ${message.role}`}>{message.text}</div>
+              <span className="msg-time">{formatTime(message.at)}</span>
+
+              {showSkeleton && (
+                <div className="rec-loading">
+                  <div className="rec-skel" />
+                  <div className="rec-skel" />
+                </div>
+              )}
+
+              {cards && cards.length > 0 && (
+                <div className="carousel">
+                  {cards.map((item) => (
+                    <RecommendationCard
+                      key={item.productCode}
+                      item={item}
+                      tripDays={tripDays}
+                      status={cardStatus[item.productCode]}
+                      onAccept={(day) => onAccept(item.productCode, day)}
+                      onPass={() => onPass(item.productCode)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
 
         {busy && (
           <div className="typing" aria-label="Thinking">
@@ -68,6 +113,8 @@ export function Chat({
         </div>
       )}
 
+      {footer}
+
       <form
         className="composer"
         onSubmit={(event) => {
@@ -75,22 +122,29 @@ export function Chat({
           submit(draft)
         }}
       >
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={
-            phase === 'need_destination'
-              ? 'Where are you going?'
-              : phase === 'need_days'
-                ? 'How many days?'
-                : 'Tell me what you like...'
-          }
-          autoFocus
-          aria-label="Message"
-        />
-        <button type="submit" disabled={busy || !draft.trim()}>
-          Send
-        </button>
+        <div className="composer-field">
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={
+              phase === 'need_destination'
+                ? 'Where are you going?'
+                : phase === 'need_days'
+                  ? 'How many days?'
+                  : 'Tell me what you like...'
+            }
+            autoFocus
+            aria-label="Message"
+          />
+          <button
+            type="submit"
+            disabled={busy || !draft.trim()}
+            className={`composer-send ${draft.trim() && !busy ? 'ready' : 'disabled'}`}
+            aria-label="Send"
+          >
+            <Send />
+          </button>
+        </div>
       </form>
     </div>
   )

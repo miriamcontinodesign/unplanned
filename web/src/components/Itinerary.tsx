@@ -1,12 +1,6 @@
 import { ActivityArt } from './ActivityArt'
+import { formatDuration } from '../format'
 import type { ItineraryDay, Preference, Trip } from '../types'
-
-function duration(minutes: number | null): string | null {
-  if (!minutes) return null
-  if (minutes < 60) return `${minutes} min`
-  const hours = minutes / 60
-  return Number.isInteger(hours) ? `${hours}h` : `${Math.floor(hours)}h ${minutes % 60}m`
-}
 
 export function Itinerary({
   itinerary,
@@ -71,7 +65,7 @@ export function Itinerary({
       {planned === 0 && (
         <div className="notice">
           <span>◆</span>
-          <span>Nothing added yet. Accept a suggestion and it lands on a day here.</span>
+          <span>Nothing added yet. Accept a suggestion in the chat and it lands on a day here.</span>
         </div>
       )}
 
@@ -89,10 +83,7 @@ export function Itinerary({
                 <div>
                   <h4>{item.title}</h4>
                   <p>
-                    {[
-                      duration(item.durationMinutes),
-                      item.priceAmount ? `$${item.priceAmount}` : null,
-                    ]
+                    {[formatDuration(item.durationMinutes), item.priceAmount ? `$${item.priceAmount}` : null]
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
