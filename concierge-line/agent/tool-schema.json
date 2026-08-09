@@ -1,0 +1,56 @@
+{
+  "_README": [
+    "Parameters for the `submit_reservation` webhook tool on the ElevenLabs agent.",
+    "Method POST, URL <PUBLIC_BASE_URL>/api/agent/submit_reservation?secret=<ELEVENLABS_WEBHOOK_SECRET>",
+    "",
+    "CRITICAL: bind `task_id` to the DYNAMIC VARIABLE named `task_id` in the dashboard",
+    "(the property accepts a `dynamic_variable` binding). Do NOT let the model produce it.",
+    "The backend injects task_id at call time; a hallucinated id writes the booking to nothing.",
+    "",
+    "The backend accepts both a flat body and a {parameters:{...}} envelope, so either",
+    "shape ElevenLabs sends will work. Confirm the real shape once via webhook.site."
+  ],
+  "type": "object",
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Identifier for this call task. Bound to a dynamic variable; do not invent it.",
+      "dynamic_variable": "task_id"
+    },
+    "reservation_confirmed": {
+      "type": "boolean",
+      "description": "True only if the venue actually confirmed a booking. False if they could not take one."
+    },
+    "confirmed_time": {
+      "type": "string",
+      "description": "The time the venue confirmed, as they said it, e.g. '8:15 PM'. Empty if nothing was confirmed."
+    },
+    "party_size": {
+      "type": "integer",
+      "description": "Number of people the reservation is actually for."
+    },
+    "name_on_reservation": {
+      "type": "string",
+      "description": "The name the booking is held under."
+    },
+    "alternatives_offered": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Every alternative time or date the venue offered, e.g. '7:00 PM', 'the following Tuesday'."
+    },
+    "special_requests_status": {
+      "type": "string",
+      "description": "Outcome of any special request, e.g. outdoor table, dietary needs, birthday, accessibility."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "How confident you are overall. Use low if anything was unclear."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anything else worth telling the traveler - dress code, deposit requested, arrive-early advice."
+    }
+  },
+  "required": ["task_id"]
+}

@@ -5,3 +5,11 @@ data/
 .env.local
 *.log
 .DS_Store
+
+# concierge-line (Python voice module)
+concierge-line/venv/
+concierge-line/.env
+concierge-line/store.json
+concierge-line/store.json.tmp
+concierge-line/demo/
+concierge-line/__pycache__/
