@@ -13,15 +13,20 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.check.json",
     "db:generate": "drizzle-kit generate",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "web:dev": "vite --config web/vite.config.ts",
+    "web:build": "vite build --config web/vite.config.ts",
+    "web:typecheck": "tsc -p web/tsconfig.json"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@hono/node-server": "^2.1.0",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.32.0",
+    "hono": "^4.13.1",
     "luxon": "^3.5.0",
     "zod": "^4.4.3"
   },
@@ -29,8 +34,14 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/luxon": "^3.4.2",
     "@types/node": "^22.10.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "drizzle-kit": "^0.31.10",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^8.2.1"
   }
 }
