@@ -294,7 +294,7 @@ export default function App() {
       ) : (
         <div className="pane">
           <div className="picks-scroll">
-            <Picks items={picks} loading={picksLoading} onRemove={removePick} />
+            <Picks items={picks} loading={picksLoading} onBook={callToBook} onRemove={removePick} />
           </div>
         </div>
       )}

@@ -1126,6 +1126,18 @@ button {
   color: var(--muted);
 }
 
+.pick-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-call.pick-book {
+  width: auto;
+  min-width: 76px;
+  padding: 7px 10px;
+}
+
 .btn-remove {
   color: var(--faint);
   font-size: 17px;
