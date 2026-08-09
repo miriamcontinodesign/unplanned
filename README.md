@@ -1,5 +1,10 @@
 # Roadio
 
+> ⚠️ **`main` does not currently compile.** A refactor to add the web app is
+> half-landed: the data layer and activity providers are in, their callers are
+> not. Read [STATUS.md](./STATUS.md) before anything else. The last fully working
+> state is commit `60c5450`.
+
 A travel concierge that lives in a Telegram thread.
 It learns where you are from what you tell it, remembers the shape of your trip, and speaks up unprompted when there's something worth doing.
 
