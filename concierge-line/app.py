@@ -41,12 +41,20 @@ def _spawn(coro: Any) -> None:
     task.add_done_callback(_BACKGROUND.discard)
 
 
-DEFAULT_ASKS = [
-    "confirm the booking",
-    "confirm the time",
-    "ask about outdoor seating",
-    "note anything we should know before arriving",
-]
+def default_asks(kind: str) -> list[str]:
+    """Asks that make sense for the venue.
+
+    "Ask about outdoor seating" on a kayak call is the same failure as a
+    terrace table in a tour confirmation - a detail nobody asked for, in a
+    context where it makes no sense.
+    """
+    common = ["confirm the booking", "confirm the time"]
+    tail = ["note anything we should know before arriving"]
+    if kind == "tour":
+        return [*common, "ask what to bring and where exactly to meet", *tail]
+    if kind == "bar":
+        return [*common, *tail]
+    return [*common, "ask whether an outdoor table is possible", *tail]
 
 
 # --------------------------------------------------------------------------
@@ -76,7 +84,7 @@ def _seed() -> None:
             "created_at": store.now_iso(),
             "status": status,
             "venue": {"name": name, "kind": kind, "phone": phone, "address": address, "stay22_ref": None},
-            "request": {"date": when, "time": at_time, "party_size": party, "asks": list(DEFAULT_ASKS)},
+            "request": {"date": when, "time": at_time, "party_size": party, "asks": default_asks(kind)},
             "traveler": {"name": traveler, "notes": notes},
             "briefing": {"policy_brief": "", "sources": []},
             "conversation_id": None,
@@ -214,13 +222,14 @@ async def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="venue.name is required")
 
     request_block = payload.get("request") or {}
+    kind = (venue.get("kind") or "restaurant").strip().lower()
     task = {
         "id": store.new_task_id(),
         "created_at": store.now_iso(),
         "status": "queued",
         "venue": {
             "name": venue.get("name", "").strip(),
-            "kind": (venue.get("kind") or "restaurant").strip(),
+            "kind": kind,
             "phone": (venue.get("phone") or "").strip(),
             "address": (venue.get("address") or "").strip(),
             "stay22_ref": venue.get("stay22_ref"),
@@ -229,7 +238,7 @@ async def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             "date": request_block.get("date"),
             "time": request_block.get("time"),
             "party_size": int(request_block.get("party_size") or 2),
-            "asks": request_block.get("asks") or list(DEFAULT_ASKS),
+            "asks": request_block.get("asks") or default_asks(kind),
         },
         "traveler": payload.get("traveler") or {"name": agents.traveler_name(), "notes": ""},
         "briefing": {"policy_brief": "", "sources": []},
