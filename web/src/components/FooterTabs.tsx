@@ -18,9 +18,11 @@ export function FooterTabs({
         <span>Chat</span>
       </button>
       <button className={`footer-tab${tab === 'picks' ? ' active' : ''}`} onClick={() => onChange('picks')}>
-        <CalendarCheck />
+        <span className="footer-tab-icon">
+          <CalendarCheck />
+          {picksCount > 0 && <span className="footer-tab-badge">{picksCount}</span>}
+        </span>
         <span>My picks</span>
-        {picksCount > 0 && <span className="footer-tab-badge">{picksCount}</span>}
       </button>
     </nav>
   )

@@ -60,3 +60,9 @@ export interface Recommendation {
   freeCancellation: boolean
   reason: string
 }
+
+/** One saved pick, plus whatever the catalogue still knows about it. */
+export interface PickDetailData {
+  pick: PickItem
+  activity: (Omit<Recommendation, 'reason'> & { productUrl: string | null }) | null
+}

@@ -1,5 +1,5 @@
 import type { DetectedPlace } from './geolocate'
-import type { PickItem, Recommendation, Snapshot, TimeOfDay } from './types'
+import type { PickDetailData, PickItem, Recommendation, Snapshot, TimeOfDay } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -62,6 +62,8 @@ export const api = {
   reset: () => request<{ ok: true }>('/api/reset', { method: 'POST' }),
 
   picks: () => request<{ picks: PickItem[] }>('/api/activities'),
+
+  pick: (id: number) => request<PickDetailData>(`/api/activities/${id}`),
 
   removePick: (id: number) => request<{ ok: true }>(`/api/activities/${id}/remove`, { method: 'POST' }),
 }

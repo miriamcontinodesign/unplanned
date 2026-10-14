@@ -1,4 +1,4 @@
-import { Compass } from 'lucide-react'
+import { ChevronRight, Compass } from 'lucide-react'
 import { ActivityArt } from './ActivityArt'
 import { formatDuration, formatPrice } from '../format'
 import type { PickItem } from '../types'
@@ -10,10 +10,12 @@ function capitalize(text: string): string {
 export function Picks({
   items,
   loading,
+  onOpen,
   onRemove,
 }: {
   items: PickItem[]
   loading: boolean
+  onOpen: (id: number) => void
   onRemove: (id: number) => void
 }) {
   if (loading) {
@@ -36,20 +38,33 @@ export function Picks({
 
   return (
     <div className="picks-list">
-      {items.map((item) => <PickRow key={item.id} item={item} onRemove={onRemove} />)}
+      {items.map((item) => <PickRow key={item.id} item={item} onOpen={onOpen} onRemove={onRemove} />)}
     </div>
   )
 }
 
 function PickRow({
   item,
+  onOpen,
   onRemove,
 }: {
   item: PickItem
+  onOpen: (id: number) => void
   onRemove: (id: number) => void
 }) {
   return (
-    <div className="pick-item">
+    <div
+      className="pick-item"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(item.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(item.id)
+        }
+      }}
+    >
       <ActivityArt seed={item.productCode ?? item.title} tags={[]} />
       <div className="pick-item-body">
         <h4>{item.title}</h4>
@@ -66,12 +81,16 @@ function PickRow({
       <div className="pick-actions">
         <button
           className="btn-remove"
-          onClick={() => onRemove(item.id)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onRemove(item.id)
+          }}
           aria-label={`Remove ${item.title}`}
           title="Remove"
         >
           ×
         </button>
+        <ChevronRight className="pick-chevron" />
       </div>
     </div>
   )

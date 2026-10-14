@@ -22,6 +22,7 @@ import {
   recentMessages,
   setPlanStatus,
   updateBooking,
+  type Plan,
   type User,
 } from '../db/repo.js'
 import { applyDestination, greeting, phaseFor, placeLabel } from '../onboarding/engine.js'
@@ -282,20 +283,33 @@ export function createServer(mutex: KeyedMutex) {
 
   // A recap of what's been said yes to today - not an itinerary, just a flat
   // list, since the whole point of this app is not planning multiple days.
+  const pickView = (p: Plan) => ({
+    id: p.id,
+    title: p.title,
+    detail: p.detail,
+    atTime: p.atTime,
+    provider: p.provider,
+    productCode: p.productCode,
+    priceAmount: p.priceAmount,
+    currency: p.currency,
+    durationMinutes: p.durationMinutes,
+  })
+
   app.get('/api/activities', (c) => {
     const user = c.get('user')
-    const picks = listOpenPlans(user.id).map((p) => ({
-      id: p.id,
-      title: p.title,
-      detail: p.detail,
-      atTime: p.atTime,
-      provider: p.provider,
-      productCode: p.productCode,
-      priceAmount: p.priceAmount,
-      currency: p.currency,
-      durationMinutes: p.durationMinutes,
-    }))
-    return c.json({ picks })
+    return c.json({ picks: listOpenPlans(user.id).map(pickView) })
+  })
+
+  // One pick plus whatever the catalogue still knows about it. The activity is null when the
+  // server has forgotten the listing (for example after a restart); the saved pick still shows.
+  app.get('/api/activities/:id', async (c) => {
+    const user = c.get('user')
+    const id = Number.parseInt(c.req.param('id'), 10)
+    const pick = Number.isFinite(id) ? listOpenPlans(user.id).find((p) => p.id === id) : undefined
+    if (!pick) return c.json({ error: 'That pick is no longer on your list.' }, 404)
+
+    const activity = pick.productCode ? await activityProvider().get(pick.productCode) : null
+    return c.json({ pick: pickView(pick), activity })
   })
 
   app.post('/api/activities/:id/remove', (c) => {

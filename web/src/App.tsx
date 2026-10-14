@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { CheckCircle2, RefreshCw } from 'lucide-react'
+import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { api } from './api'
 import { Chat } from './components/Chat'
 import { FooterTabs, type FooterTab } from './components/FooterTabs'
 import { Landing } from './components/Landing'
+import { PickDetail } from './components/PickDetail'
 import { Picks } from './components/Picks'
 import { TimeSlotPicker } from './components/TimeSlotPicker'
 import type { DetectedPlace } from './geolocate'
@@ -29,6 +30,7 @@ export default function App() {
   const [tab, setTab] = useState<FooterTab>('chat')
   const [picks, setPicks] = useState<PickItem[]>([])
   const [picksLoading, setPicksLoading] = useState(false)
+  const [openPickId, setOpenPickId] = useState<number | null>(null)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -171,6 +173,7 @@ export default function App() {
   const removePick = async (id: number) => {
     try {
       await api.removePick(id)
+      setOpenPickId((current) => (current === id ? null : current))
       void refreshPicks()
     } catch (err) {
       setError((err as Error).message)
@@ -213,8 +216,8 @@ export default function App() {
           greeting={snapshot.greeting}
           busy={busy}
           error={error}
+          tripLabel={snapshot.trip?.label ?? null}
           onSend={send}
-          onReset={reset}
           onLocate={setLocation}
         />
       </div>
@@ -238,8 +241,8 @@ export default function App() {
           </div>
         </div>
         <div className="masthead-spacer" />
-        <button className="masthead-reset" onClick={reset} title="Reset demo" aria-label="Reset">
-          <RefreshCw />
+        <button className="masthead-reset" onClick={reset} title="Back to start" aria-label="Back to start">
+          <ArrowLeft />
         </button>
       </header>
 
@@ -270,14 +273,25 @@ export default function App() {
           onLocate={setLocation}
         />
       ) : (
-        <div className="pane">
-          <div className="picks-scroll">
-            <Picks items={picks} loading={picksLoading} onRemove={removePick} />
+        openPickId !== null ? (
+          <PickDetail id={openPickId} onBack={() => setOpenPickId(null)} onRemove={removePick} />
+        ) : (
+          <div className="pane">
+            <div className="picks-scroll">
+              <Picks items={picks} loading={picksLoading} onOpen={setOpenPickId} onRemove={removePick} />
+            </div>
           </div>
-        </div>
+        )
       )}
 
-      {snapshot.trip && <FooterTabs tab={tab} picksCount={picks.length} onChange={setTab} />}
+      {snapshot.trip && <FooterTabs
+          tab={tab}
+          picksCount={picks.length}
+          onChange={(next) => {
+            setOpenPickId(null)
+            setTab(next)
+          }}
+        />}
     </div>
   )
 }

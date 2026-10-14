@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Carousel } from './Carousel'
 import { Composer } from './Composer'
 import { LocateButton } from './LocateButton'
 import { RecommendationCard } from './RecommendationCard'
@@ -80,7 +81,7 @@ export function Chat({
               )}
 
               {cards && cards.length > 0 && (
-                <div className="carousel">
+                <Carousel count={cards.filter((card) => cardStatus[card.productCode] !== 'passed').length}>
                   {cards.map((item) => (
                     <RecommendationCard
                       key={item.productCode}
@@ -90,7 +91,7 @@ export function Chat({
                       onPass={() => onPass(item.productCode)}
                     />
                   ))}
-                </div>
+                </Carousel>
               )}
             </div>
           )
