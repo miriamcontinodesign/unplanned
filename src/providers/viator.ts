@@ -1,4 +1,4 @@
-import { searchExperiences } from '../services/viator.js'
+import { searchExperiences, type ViatorExperience } from '../services/viator.js'
 import { BUDGET_CEILING } from './types.js'
 import type { Activity, ActivityProvider, ActivitySearchQuery, AvailabilityOption } from './types.js'
 
@@ -13,6 +13,29 @@ function imageUrl(template: string | undefined): string | null {
 function featureLabel(value: string): string {
   const label = value.replace(/_/g, ' ').trim().toLowerCase()
   return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+/** A Viator experience as a recommendation card. */
+export function toActivity(experience: ViatorExperience, destination: string): Activity {
+  const category = experience.keyAttributes?.mainCategory?.trim() || 'Experience'
+  const features = experience.keyAttributes?.features?.filter(Boolean) ?? []
+  return {
+    provider: 'viator',
+    productCode: experience.code,
+    title: experience.title,
+    summary: features.length > 0 ? features.slice(0, 3).map(featureLabel).join(' · ') : '',
+    destination,
+    durationMinutes: minutes(experience.duration),
+    rating: experience.rating ?? null,
+    reviewCount: experience.reviewCount ?? null,
+    fromPrice: { amount: experience.fromPrice ?? 0, currency: 'USD' },
+    imageUrl: imageUrl(experience.thumbnail),
+    tags: [category, ...features].map((value) => value.toLowerCase()),
+    category,
+    freeCancellation: experience.freeCancellation,
+    productUrl: experience.clickOffToLander,
+    meetingPoint: null,
+  }
 }
 
 /** Live Viator search adapter used by the web recommendation feed. */
@@ -47,28 +70,15 @@ export class ViatorProvider implements ActivityProvider {
     })
 
     return result.experiences.map((experience) => {
-      const category = experience.keyAttributes?.mainCategory?.trim() || 'Experience'
-      const features = experience.keyAttributes?.features?.filter(Boolean) ?? []
-      const activity: Activity = {
-        provider: this.name,
-        productCode: experience.code,
-        title: experience.title,
-        summary: features.length > 0 ? features.slice(0, 3).map(featureLabel).join(' · ') : '',
-        destination: query.destination,
-        durationMinutes: minutes(experience.duration),
-        rating: experience.rating ?? null,
-        reviewCount: experience.reviewCount ?? null,
-        fromPrice: { amount: experience.fromPrice ?? 0, currency: 'USD' },
-        imageUrl: imageUrl(experience.thumbnail),
-        tags: [category, ...features].map((value) => value.toLowerCase()),
-        category,
-        freeCancellation: experience.freeCancellation,
-        productUrl: experience.clickOffToLander,
-        meetingPoint: null,
-      }
+      const activity = toActivity(experience, query.destination)
       this.#index.set(activity.productCode, activity)
       return activity
     })
+  }
+
+  /** Registers cards produced outside `search`, so accept, pass and booking can still find them. */
+  remember(activities: Activity[]): void {
+    for (const activity of activities) this.#index.set(activity.productCode, activity)
   }
 
   async get(productCode: string): Promise<Activity | null> {

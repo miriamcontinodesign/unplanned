@@ -20,10 +20,12 @@ export const api = {
   me: () => request<Snapshot>('/api/me'),
 
   chat: (message: string) =>
-    request<Snapshot & { reply: string }>('/api/chat', {
+    request<Snapshot & { reply: string; suggestions: string[] }>('/api/chat', {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
+
+  suggestions: () => request<{ suggestions: string[] }>('/api/suggestions'),
 
   setLocation: (place: DetectedPlace) =>
     request<Snapshot>('/api/location', {
@@ -53,12 +55,6 @@ export const api = {
     request<{ ok: true }>('/api/activities/pass', {
       method: 'POST',
       body: JSON.stringify({ productCode }),
-    }),
-
-  callToBook: (productCode: string, timeOfDay: TimeOfDay) =>
-    request<{ taskId: string; status: string; dashboardUrl: string }>('/api/bookings/call', {
-      method: 'POST',
-      body: JSON.stringify({ productCode, timeOfDay }),
     }),
 
   linkCode: () => request<{ code: string; expiresAt: string }>('/api/link/code', { method: 'POST' }),

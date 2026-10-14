@@ -2,6 +2,10 @@ import type { AgentTool } from '../llm/agent.js'
 import { config } from '../config.js'
 import { formatExperienceResults, searchExperiences } from '../services/viator.js'
 import { searchMockExperiences } from './viator.mock.js'
+import { currentStay } from '../db/repo.js'
+import { rememberChatResults } from '../onboarding/recommend.js'
+import { activityProvider } from '../providers/index.js'
+import { toActivity, ViatorProvider } from '../providers/viator.js'
 
 /**
  * Public Roadio component for Viator's bookable experience search.
@@ -100,6 +104,15 @@ export function experienceSearchTool(userId: string): AgentTool {
       const result = config.viatorMock
         ? searchMockExperiences(userId, searchInput)
         : await searchExperiences(userId, searchInput)
+
+      // Show the same experiences as cards, so they match what the reply recommends.
+      const stay = currentStay(userId)
+      const provider = activityProvider()
+      if (!config.viatorMock && stay && provider instanceof ViatorProvider) {
+        const activities = result.experiences.map((experience) => toActivity(experience, stay.city))
+        provider.remember(activities)
+        rememberChatResults(userId, stay.city, activities)
+      }
       return formatExperienceResults(result, currency)
     },
   }

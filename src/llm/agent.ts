@@ -1,6 +1,6 @@
 import type OpenAI from 'openai'
-import { llm, RefusalError, throwOnRouterError } from './client.js'
-import { config, reasoningParams, type EffortLevel } from '../config.js'
+import { llm, RefusalError, withModelFallback } from './client.js'
+import { reasoningParams, type EffortLevel } from '../config.js'
 import { logger } from '../util/log.js'
 
 const log = logger('agent')
@@ -50,14 +50,15 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
   const toolCalls: string[] = []
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const response = await llm().chat.completions.create({
-      model: config.model,
-      max_tokens: options.maxTokens ?? 16000,
-      messages,
-      tools: definitions,
-      ...reasoningParams(options.effort ?? 'medium'),
-    })
-    throwOnRouterError(response)
+    const response = await withModelFallback((model) =>
+      llm().chat.completions.create({
+        model,
+        max_tokens: options.maxTokens ?? 16000,
+        messages,
+        tools: definitions,
+        ...reasoningParams(options.effort ?? 'medium'),
+      }),
+    )
 
     const choice = response.choices[0]
     if (!choice) throw new Error('OpenRouter returned no choices.')

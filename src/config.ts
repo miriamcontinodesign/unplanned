@@ -31,12 +31,25 @@ export const config = {
    */
   openRouterApiKey: optionalEnv('OPENROUTER_API_KEY'),
 
+  /** Override for local development against a mock OpenRouter-shaped server. */
+  openRouterBaseUrl: process.env.ROADIO_OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1',
+
   /**
    * An OpenRouter model slug, not an Anthropic alias. Anything on their catalogue
    * that supports `tools` and `structured_outputs` will work; the concierge needs
    * both, and captioning additionally needs image input.
    */
   model: process.env.ROADIO_MODEL?.trim() || 'google/gemini-2.5-flash-lite',
+
+  /**
+   * Models to try in order: `ROADIO_MODEL` first, then the comma-separated
+   * `ROADIO_FALLBACK_MODELS`. A call moves to the next one on rate limits,
+   * provider outages and "model unavailable" errors.
+   */
+  fallbackModels: (process.env.ROADIO_FALLBACK_MODELS ?? '')
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter(Boolean),
 
   /**
    * OpenRouter's unified reasoning switch. On by default because the per-call
@@ -52,7 +65,16 @@ export const config = {
     'https://exp-app-mcp.prod.ep.viator.com/mcp',
   viatorMock: booleanEnv('ROADIO_VIATOR_MOCK'),
 
-  httpPort: intEnv('ROADIO_HTTP_PORT', 8787),
+  // Hosts such as Render hand the listening port over as PORT.
+  httpPort: intEnv('ROADIO_HTTP_PORT', intEnv('PORT', 8787)),
+
+  /**
+   * Cap on model-spending requests (chat turns), so a public link cannot burn through the
+   * OpenRouter allowance: per visitor IP per 10 minutes, and across everyone per hour.
+   * 0 disables a limit.
+   */
+  chatLimitPerIp: intEnv('ROADIO_CHAT_LIMIT_PER_IP', 20),
+  chatLimitGlobal: intEnv('ROADIO_CHAT_LIMIT_GLOBAL', 200),
   /** Built SPA, served by the same process in production. */
   webDir: path.resolve(process.env.ROADIO_WEB_DIR?.trim() || './web/dist'),
 } as const
@@ -74,6 +96,7 @@ export const effort = {
   extract: 'low',
   nudge: 'high',
   caption: 'low',
+  suggest: 'low',
 } as const satisfies Record<string, EffortLevel>
 
 /** Spread into a request. Empty when reasoning is switched off. */

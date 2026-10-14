@@ -19,10 +19,11 @@ export function Chat({
   error,
   onSend,
   carousels,
+  suggestions,
+  suggestionsLoading,
   cardStatus,
   loadingIndex,
   onAccept,
-  onCall,
   onPass,
   onLocate,
 }: {
@@ -33,10 +34,11 @@ export function Chat({
   error: string | null
   onSend: (text: string) => void
   carousels: Record<number, Recommendation[]>
+  suggestions: string[]
+  suggestionsLoading: boolean
   cardStatus: Record<string, 'added' | 'passed'>
   loadingIndex: number | null
   onAccept: (productCode: string) => void
-  onCall: (productCode: string) => Promise<'handed_off'>
   onPass: (productCode: string) => void
   onLocate: (place: DetectedPlace) => Promise<{ ok: true } | { ok: false; message: string }>
 }) {
@@ -85,7 +87,6 @@ export function Chat({
                       item={item}
                       status={cardStatus[item.productCode]}
                       onAccept={() => onAccept(item.productCode)}
-                      onCall={() => onCall(item.productCode)}
                       onPass={() => onPass(item.productCode)}
                     />
                   ))}
@@ -122,9 +123,9 @@ export function Chat({
         />
       )}
 
-      {!busy && (
+      {!busy && !(phase === 'ready' && suggestionsLoading) && (
         <div className="suggestion-row">
-          {PROMPTS[phase].map((prompt) => (
+          {(phase === 'ready' && suggestions.length > 0 ? suggestions : PROMPTS[phase]).map((prompt) => (
             <button key={prompt} onClick={() => submit(prompt)}>
               {prompt}
             </button>

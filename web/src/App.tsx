@@ -29,6 +29,8 @@ export default function App() {
   const [tab, setTab] = useState<FooterTab>('chat')
   const [picks, setPicks] = useState<PickItem[]>([])
   const [picksLoading, setPicksLoading] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -47,6 +49,19 @@ export default function App() {
       // A failed refresh shouldn't blow away what's already on screen.
     } finally {
       setLoadingIndex((current) => (current === attachIndex ? null : current))
+    }
+  }, [])
+
+  // Follow-up chips written by the model for the latest reply. Empty on failure, in which
+  // case the chat falls back to its default chips.
+  const refreshSuggestions = useCallback(async () => {
+    setSuggestionsLoading(true)
+    try {
+      setSuggestions((await api.suggestions()).suggestions)
+    } catch {
+      setSuggestions([])
+    } finally {
+      setSuggestionsLoading(false)
     }
   }, [])
 
@@ -74,11 +89,12 @@ export default function App() {
         if (state.phase === 'ready' && state.messages.length > 0) {
           // No explicit slot yet - let the server pick from the trip's timezone.
           void refreshRecommendations(state.messages.length - 1)
+          void refreshSuggestions()
           void refreshPicks()
         }
       })
       .catch((err: Error) => setError(err.message))
-  }, [refreshRecommendations, refreshPicks])
+  }, [refreshRecommendations, refreshPicks, refreshSuggestions])
 
   const showToast = (text: string) => {
     setToast(text)
@@ -100,6 +116,13 @@ export default function App() {
       }
     }
 
+    // Show the traveler's message straight away; the server's snapshot replaces it
+    // (with the same message plus the reply) when the answer arrives.
+    setSnapshot((prev) =>
+      prev
+        ? { ...prev, messages: [...prev.messages, { role: 'user', text, at: new Date().toISOString() }] }
+        : prev,
+    )
     setBusy(true)
     setError(null)
     try {
@@ -107,6 +130,7 @@ export default function App() {
       setSnapshot(next)
       if (next.phase === 'ready' && next.messages.length > 0) {
         void refreshRecommendations(next.messages.length - 1, slot)
+        setSuggestions(next.suggestions)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -159,25 +183,6 @@ export default function App() {
       setCardStatus((prev) => ({ ...prev, [productCode]: 'passed' }))
     } catch (err) {
       setError((err as Error).message)
-    }
-  }
-
-  // No day-by-day itinerary to key the call off - "slot" (already known here)
-  // is the same time-of-day context the card's Add button uses.
-  const callToBook = async (productCode: string) => {
-    // Open synchronously from the click so popup blockers do not reject the
-    // handoff while we wait for the concierge task to be created.
-    const conciergeWindow = window.open('about:blank', '_blank')
-    if (conciergeWindow) conciergeWindow.opener = null
-    try {
-      const handoff = await api.callToBook(productCode, slot)
-      if (conciergeWindow) conciergeWindow.location.href = handoff.dashboardUrl
-      else window.location.href = handoff.dashboardUrl
-      showToast('Opened in Concierge Line')
-      return 'handed_off' as const
-    } catch (error) {
-      conciergeWindow?.close()
-      throw error
     }
   }
 
@@ -256,17 +261,18 @@ export default function App() {
           error={error}
           onSend={send}
           carousels={carousels}
+          suggestions={suggestions}
+          suggestionsLoading={suggestionsLoading}
           cardStatus={cardStatus}
           loadingIndex={loadingIndex}
           onAccept={accept}
-          onCall={callToBook}
           onPass={pass}
           onLocate={setLocation}
         />
       ) : (
         <div className="pane">
           <div className="picks-scroll">
-            <Picks items={picks} loading={picksLoading} onBook={callToBook} onRemove={removePick} />
+            <Picks items={picks} loading={picksLoading} onRemove={removePick} />
           </div>
         </div>
       )}

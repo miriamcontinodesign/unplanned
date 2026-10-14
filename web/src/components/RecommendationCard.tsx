@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { ArrowRight, CheckCircle2, Clock, PhoneCall, Star } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock, Star } from 'lucide-react'
 import { categoryFor, glyphFor, gradientFor } from './ActivityArt'
 import { formatDuration, formatPrice } from '../format'
 import type { Recommendation } from '../types'
@@ -8,27 +7,13 @@ export function RecommendationCard({
   item,
   status,
   onAccept,
-  onCall,
   onPass,
 }: {
   item: Recommendation
   status: 'added' | 'passed' | undefined
   onAccept: () => void
-  onCall: () => Promise<'handed_off'>
   onPass: () => void
 }) {
-  const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'handed_off' | 'unavailable'>('idle')
-
-  const callToBook = async () => {
-    if (callStatus === 'calling' || callStatus === 'handed_off') return
-    setCallStatus('calling')
-    try {
-      setCallStatus(await onCall())
-    } catch {
-      setCallStatus('unavailable')
-    }
-  }
-
   // Passed items are dropped for good - the recommender never resurfaces them,
   // so there is nothing useful left to show in the carousel.
   if (status === 'passed') return null
@@ -88,19 +73,6 @@ export function RecommendationCard({
             <button className="btn-accept" onClick={onAccept}>
               <span>Add</span>
               <ArrowRight />
-            </button>
-            <button
-              className={`btn-call is-${callStatus}`}
-              onClick={() => void callToBook()}
-              disabled={callStatus === 'calling' || callStatus === 'handed_off'}
-            >
-              <PhoneCall />
-              <span>
-                {callStatus === 'calling' && 'Opening…'}
-                {callStatus === 'handed_off' && 'Opened in Concierge Line'}
-                {callStatus === 'unavailable' && 'Concierge unavailable — try again'}
-                {callStatus === 'idle' && 'Book'}
-              </span>
             </button>
           </div>
         )}

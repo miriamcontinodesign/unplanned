@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Compass, PhoneCall } from 'lucide-react'
+import { Compass } from 'lucide-react'
 import { ActivityArt } from './ActivityArt'
 import { formatDuration, formatPrice } from '../format'
 import type { PickItem } from '../types'
@@ -11,12 +10,10 @@ function capitalize(text: string): string {
 export function Picks({
   items,
   loading,
-  onBook,
   onRemove,
 }: {
   items: PickItem[]
   loading: boolean
-  onBook: (productCode: string) => Promise<'handed_off'>
   onRemove: (id: number) => void
 }) {
   if (loading) {
@@ -39,32 +36,18 @@ export function Picks({
 
   return (
     <div className="picks-list">
-      {items.map((item) => <PickRow key={item.id} item={item} onBook={onBook} onRemove={onRemove} />)}
+      {items.map((item) => <PickRow key={item.id} item={item} onRemove={onRemove} />)}
     </div>
   )
 }
 
 function PickRow({
   item,
-  onBook,
   onRemove,
 }: {
   item: PickItem
-  onBook: (productCode: string) => Promise<'handed_off'>
   onRemove: (id: number) => void
 }) {
-  const [bookStatus, setBookStatus] = useState<'idle' | 'opening' | 'handed_off' | 'unavailable'>('idle')
-
-  const book = async () => {
-    if (!item.productCode || bookStatus === 'opening' || bookStatus === 'handed_off') return
-    setBookStatus('opening')
-    try {
-      setBookStatus(await onBook(item.productCode))
-    } catch {
-      setBookStatus('unavailable')
-    }
-  }
-
   return (
     <div className="pick-item">
       <ActivityArt seed={item.productCode ?? item.title} tags={[]} />
@@ -81,21 +64,6 @@ function PickRow({
         </p>
       </div>
       <div className="pick-actions">
-        {item.productCode && (
-          <button
-            className={`btn-call pick-book is-${bookStatus === 'opening' ? 'calling' : bookStatus}`}
-            onClick={() => void book()}
-            disabled={bookStatus === 'opening' || bookStatus === 'handed_off'}
-          >
-            <PhoneCall />
-            <span>
-              {bookStatus === 'idle' && 'Book'}
-              {bookStatus === 'opening' && 'Opening…'}
-              {bookStatus === 'handed_off' && 'Opened'}
-              {bookStatus === 'unavailable' && 'Try again'}
-            </span>
-          </button>
-        )}
         <button
           className="btn-remove"
           onClick={() => onRemove(item.id)}

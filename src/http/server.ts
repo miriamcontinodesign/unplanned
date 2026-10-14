@@ -25,9 +25,9 @@ import {
   type User,
 } from '../db/repo.js'
 import { applyDestination, greeting, phaseFor, placeLabel } from '../onboarding/engine.js'
-import { recommendationsFor, slotForHour, type TimeOfDay } from '../onboarding/recommend.js'
+import { suggestFollowUps } from '../llm/suggest.js'
+import { recommendationsFor, slotForHour, finishChatTurn, startChatTurn, type TimeOfDay } from '../onboarding/recommend.js'
 import { activityProvider } from '../providers/index.js'
-import { conciergeTaskUrl, createBookingTask } from '../concierge/client.js'
 import { timezoneFor } from '../services/geocode.js'
 import { extractAndApply } from '../llm/extract.js'
 import { generateReply, transcriptText } from '../llm/reply.js'
@@ -42,12 +42,33 @@ function parseSlot(value: string | undefined): TimeOfDay | undefined {
   return TIME_SLOTS.includes(value as TimeOfDay) ? (value as TimeOfDay) : undefined
 }
 
-/** Roughly when each slot happens, for the concierge call script. */
-const SLOT_TIMES: Record<TimeOfDay, string> = {
-  morning: '09:30',
-  afternoon: '14:00',
-  evening: '18:30',
-  night: '21:00',
+/**
+ * Sliding-window counter for the model-spending routes. In memory, which is enough for a
+ * single-instance demo: a restart resets the counts along with everything else.
+ */
+function createRateLimiter() {
+  const perIp = new Map<string, number[]>()
+  const everyone: number[] = []
+  const TEN_MINUTES = 10 * 60_000
+  const HOUR = 60 * 60_000
+
+  const prune = (hits: number[], windowMs: number, now: number) => {
+    while (hits.length > 0 && now - hits[0]! > windowMs) hits.shift()
+  }
+
+  /** True when the request may proceed (and is counted). */
+  return (ip: string): boolean => {
+    const now = Date.now()
+    const mine = perIp.get(ip) ?? []
+    prune(mine, TEN_MINUTES, now)
+    prune(everyone, HOUR, now)
+    if (config.chatLimitPerIp > 0 && mine.length >= config.chatLimitPerIp) return false
+    if (config.chatLimitGlobal > 0 && everyone.length >= config.chatLimitGlobal) return false
+    mine.push(now)
+    everyone.push(now)
+    perIp.set(ip, mine)
+    return true
+  }
 }
 
 /** Typed context so `c.get('user')` is a User rather than unknown. */
@@ -55,6 +76,21 @@ type Env = { Variables: { user: User } }
 
 export function createServer(mutex: KeyedMutex) {
   const app = new Hono<Env>()
+
+  // Follow-up chips for a conversation's latest message, cached so reloads cost nothing.
+  // Empty on any failure and the web app falls back to its default chips.
+  const suggestionCache = new Map<string, { lastMessageId: number; suggestions: string[] }>()
+  async function suggestionsFor(userId: string): Promise<string[]> {
+    const latest = recentMessages(userId, 1)[0]
+    if (!latest) return []
+
+    const cached = suggestionCache.get(userId)
+    if (cached?.lastMessageId === latest.id) return cached.suggestions
+
+    const suggestions = await suggestFollowUps(userId)
+    if (suggestions.length > 0) suggestionCache.set(userId, { lastMessageId: latest.id, suggestions })
+    return suggestions
+  }
 
   // --- session ---------------------------------------------------------------
   // Anonymous by construction: the first request mints a traveler so memory can
@@ -100,8 +136,14 @@ export function createServer(mutex: KeyedMutex) {
     return c.json({ ok: true })
   })
 
+  const allowChat = createRateLimiter()
   app.post('/api/chat', async (c) => {
     const user = c.get('user')
+    // Behind a host's proxy the visitor is the first address in x-forwarded-for.
+    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
+    if (!allowChat(ip)) {
+      return c.json({ error: 'The demo is getting a lot of use right now. Please try again in a few minutes.' }, 429)
+    }
     const body = await c.req.json<{ message?: string }>().catch(() => ({}) as { message?: string })
     const message = body.message?.trim()
     if (!message) return c.json({ error: 'Say something first.' }, 400)
@@ -114,14 +156,20 @@ export function createServer(mutex: KeyedMutex) {
     const reply = await mutex.run(user.id, async () => {
       const priorTranscript = transcriptText(user.id, 8)
       addMessage(user.id, 'user', message)
+      startChatTurn(user.id)
       await extractAndApply(user.id, message, priorTranscript)
       const answer = await generateReply(user.id)
+      const city = currentStay(user.id)?.city
+      if (city) finishChatTurn(user.id, city, answer)
       addMessage(user.id, 'assistant', answer)
       return answer
     })
 
+    // Chips ride along with the reply so the two appear together.
+    const suggestions = await suggestionsFor(user.id)
+
     // snapshot() recomputes phase from the freshly written state.
-    return c.json({ reply, ...snapshot(user) })
+    return c.json({ reply, suggestions, ...snapshot(user) })
   })
 
   // Resolves a detected location silently - it is not a conversational turn,
@@ -180,6 +228,8 @@ export function createServer(mutex: KeyedMutex) {
       sampleData: activityProvider().isSample,
     })
   })
+
+  app.get('/api/suggestions', async (c) => c.json({ suggestions: await suggestionsFor(c.get('user').id) }))
 
   // --- activities --------------------------------------------------------------
   // No day-by-day itinerary: accepting or passing just tells the recommender
@@ -263,35 +313,6 @@ export function createServer(mutex: KeyedMutex) {
   app.get('/api/bookings/confirmed', (c) => {
     const confirmed = listBookings(c.get('user').id).filter((booking) => booking.status === 'confirmed')
     return c.json({ bookings: confirmed })
-  })
-
-  app.post('/api/bookings/call', async (c) => {
-    const user = c.get('user')
-    const body: { productCode?: string; timeOfDay?: string } = await c.req.json().catch(() => ({}))
-    if (!body.productCode) return c.json({ error: 'productCode is required.' }, 400)
-
-    const activity = await activityProvider().get(body.productCode)
-    if (!activity) return c.json({ error: 'That activity is no longer listed.' }, 404)
-
-    // No day-by-day itinerary here - this app is about today. The call asks
-    // about right now, at roughly whichever part of the day was picked.
-    const stay = currentStay(user.id)
-    const slot = parseSlot(body.timeOfDay) ?? (stay ? slotForHour(localHour(stay.timezone)) : 'evening')
-    const travelDate = new Date().toISOString().slice(0, 10)
-
-    const taskId = await createBookingTask({
-      venueName: activity.title,
-      venueKind: 'tour',
-      venueAddress: activity.meetingPoint?.address,
-      date: travelDate,
-      time: SLOT_TIMES[slot],
-      partySize: Math.max(stay?.partySize ?? 1, 1),
-      travelerName: user.displayName,
-      notes: 'Please ask about availability and how to complete the booking.',
-    })
-
-    if (!taskId) return c.json({ error: 'The calling service is unavailable right now.' }, 503)
-    return c.json({ taskId, status: 'queued', dashboardUrl: conciergeTaskUrl(taskId) })
   })
 
   app.post('/api/bookings/confirm', async (c) => {

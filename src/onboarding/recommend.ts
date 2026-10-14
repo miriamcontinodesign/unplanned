@@ -8,6 +8,51 @@ export interface Recommendation extends Activity {
   reason: string
 }
 
+/**
+ * The experiences the concierge itself searched for on the traveler's latest request,
+ * so the cards show what the reply is talking about instead of a second, profile-only
+ * search. In memory on purpose: it is a view of the current conversation, not trip state.
+ */
+const chatResults = new Map<string, { destination: string; activities: Activity[]; stale: boolean }>()
+
+/** Call when a new message arrives: the next search replaces the old results instead of adding to them. */
+export function startChatTurn(userId: string): void {
+  const entry = chatResults.get(userId)
+  if (entry) entry.stale = true
+}
+
+/** A turn can search more than once; every search in it contributes cards. */
+export function rememberChatResults(userId: string, destination: string, activities: Activity[]): void {
+  if (activities.length === 0) return
+  const entry = chatResults.get(userId)
+  if (!entry || entry.stale || entry.destination !== destination) {
+    chatResults.set(userId, { destination, activities, stale: false })
+    return
+  }
+  const known = new Set(entry.activities.map((activity) => activity.productCode))
+  entry.activities.push(...activities.filter((activity) => !known.has(activity.productCode)))
+}
+
+/**
+ * Once the reply is written, keep only the experiences it actually recommends (matched by
+ * booking link or title). A turn that searched but recommended nothing relevant, or did not
+ * search at all, leaves no cards rather than off-topic ones.
+ */
+export function finishChatTurn(userId: string, destination: string, reply: string): void {
+  const entry = chatResults.get(userId)
+  const searchedThisTurn = entry !== undefined && !entry.stale && entry.destination === destination
+  const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const text = squash(reply)
+  const mentioned = (activity: Activity) =>
+    reply.includes(activity.productCode) || text.includes(squash(activity.title).slice(0, 30))
+
+  chatResults.set(userId, {
+    destination,
+    activities: searchedThisTurn ? entry.activities.filter(mentioned) : [],
+    stale: true,
+  })
+}
+
 /** Hour (0-23, local to the traveler) to the slot the picker shows by default. */
 export function slotForHour(hour: number): TimeOfDay {
   if (hour >= 5 && hour < 12) return 'morning'
@@ -49,6 +94,24 @@ export async function recommendationsFor(
 ): Promise<Recommendation[]> {
   const stay = currentStay(userId)
   if (!stay) return []
+
+  // Results from the latest chat search win while they are for the city the traveler
+  // is in now. They keep Viator's relevance order, so the time-of-day tabs do not
+  // reshuffle them.
+  const fromChat = chatResults.get(userId)
+  if (fromChat && fromChat.destination.toLowerCase() === stay.city.toLowerCase()) {
+    const decided = decidedProductCodes(userId)
+    return fromChat.activities
+      .filter((activity) => !decided.has(activity.productCode))
+      .slice(0, limit)
+      .map((activity) => ({
+        ...activity,
+        reason: buildReason(activity, [], [], timeOfDay, stay.budgetLevel).replace(
+          /^/,
+          'Picked for what you asked · ',
+        ),
+      }))
+  }
 
   const likes = listPreferences(userId)
     .filter((p) => p.kind === 'like')

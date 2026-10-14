@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { zodResponseFormat } from 'openai/helpers/zod'
-import { llm, throwOnRouterError } from './client.js'
-import { config, effort, reasoningParams } from '../config.js'
+import { llm, withModelFallback } from './client.js'
+import { effort, reasoningParams } from '../config.js'
 import { EXTRACTOR_SYSTEM } from './prompts.js'
 import { renderTravelerState } from './state.js'
 import { geocode } from '../services/geocode.js'
@@ -48,32 +48,32 @@ export async function extractAndApply(
 ): Promise<Extraction | null> {
   let extraction: Extraction
   try {
-    const response = await llm().chat.completions.parse({
-      model: config.model,
-      max_tokens: 8000,
-      response_format: zodResponseFormat(Extraction, 'extraction'),
-      ...reasoningParams(effort.extract),
-      messages: [
-        { role: 'system', content: EXTRACTOR_SYSTEM },
-        {
-          role: 'user',
-          content: [
-            'Existing trip record:',
-            renderTravelerState(userId),
-            '',
-            'Recent conversation:',
-            transcript || '(none)',
-            '',
-            'NEWEST MESSAGE FROM THE TRAVELER:',
-            newMessage,
-            '',
-            'Report only what this newest message changes.',
-          ].join('\n'),
-        },
-      ],
-    })
-
-    throwOnRouterError(response)
+    const response = await withModelFallback((model) =>
+      llm().chat.completions.parse({
+        model,
+        max_tokens: 8000,
+        response_format: zodResponseFormat(Extraction, 'extraction'),
+        ...reasoningParams(effort.extract),
+        messages: [
+          { role: 'system', content: EXTRACTOR_SYSTEM },
+          {
+            role: 'user',
+            content: [
+              'Existing trip record:',
+              renderTravelerState(userId),
+              '',
+              'Recent conversation:',
+              transcript || '(none)',
+              '',
+              'NEWEST MESSAGE FROM THE TRAVELER:',
+              newMessage,
+              '',
+              'Report only what this newest message changes.',
+            ].join('\n'),
+          },
+        ],
+      }),
+    )
 
     const parsed = response.choices[0]?.message.parsed
     if (!parsed) {

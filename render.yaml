@@ -1,0 +1,22 @@
+# Render blueprint: a single free web service. The SQLite file lives in /tmp on purpose -
+# this is a demo, so every restart or redeploy starts from a clean slate.
+services:
+  - type: web
+    name: unplanned
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build && npm run web:build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: ROADIO_DB_PATH
+        value: /tmp/roadio.db
+      - key: ROADIO_MODEL
+        value: nvidia/nemotron-3-super-120b-a12b:free
+      - key: ROADIO_FALLBACK_MODELS
+        value: openrouter/free,dots-studio/dots-3-note-preview:free
+      # Set in the Render dashboard; never committed.
+      - key: OPENROUTER_API_KEY
+        sync: false

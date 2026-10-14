@@ -9,7 +9,7 @@ The canonical one-minute product narrative is documented in [the demo user story
 
 ## Status
 
-Web app runs end to end: chat, recommendations, accept/pass, phone booking hand-off. Chat is
+Web app runs end to end: chat, recommendations, accept/pass. Chat is
 fully OpenRouter-backed and needs `OPENROUTER_API_KEY` set. See [STATUS.md](./STATUS.md) for
 what is and is not verified (also predates the current scope in places).
 
@@ -23,26 +23,6 @@ npm run web:dev         # SPA on :5173, proxies /api to :8787
 ```
 
 Open http://localhost:5173 and say where you are and what you're up for.
-
-### Phone booking
-
-The recommendation-card **Book** action creates a queued task in the bundled
-`concierge-line` service and opens that task in its dashboard. Concierge Line
-then owns starting the outbound call, showing its transcript, and presenting
-the booking result. Run it alongside Roadio:
-
-```bash
-cd concierge-line
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
-```
-
-Roadio connects through `CONCIERGE_LINE_URL`, which defaults to
-`http://127.0.0.1:8000`. Without telephony credentials the service performs a
-scripted fake call through the same task and polling flow. For live calls, add
-the ElevenLabs/Twilio settings described in
-[`concierge-line/SETUP-human.md`](concierge-line/SETUP-human.md).
 
 ## How it works
 

@@ -25,11 +25,56 @@ export function llm(): OpenAI {
       )
     }
     client = new OpenAI({
-      baseURL: 'https://openrouter.ai/api/v1',
+      baseURL: config.openRouterBaseUrl,
       apiKey: config.openRouterApiKey,
+      // With fallbacks, failing over beats waiting out the SDK's backoff on a dead model.
+      ...(config.fallbackModels.length > 0 ? { maxRetries: 0 } : {}),
     })
   }
   return client
+}
+
+/** How long a rate-limited model is skipped before it is tried again. */
+const COOLDOWN_MS = 60_000
+const cooldownUntil = new Map<string, number>()
+
+/** Errors another model could plausibly get past, as opposed to a bug in our request. */
+function isFailoverError(error: unknown): boolean {
+  const status = (error as { status?: number }).status
+  if (typeof status === 'number') return status === 429 || status === 402 || status === 408 || status >= 404
+  // Connection failures and errors reported inside a 200 body (throwOnRouterError).
+  return error instanceof OpenAI.APIConnectionError || (error instanceof Error && error.message.startsWith('OpenRouter:'))
+}
+
+/**
+ * Runs `call` against `ROADIO_MODEL`, then each of `ROADIO_FALLBACK_MODELS` until one
+ * succeeds. Only failover-worthy errors (rate limit, out of credit, provider down, model
+ * unavailable) move on to the next model; anything else is thrown straight away.
+ * Rate-limited models are skipped for a minute so every turn doesn't pay for a dead call.
+ */
+export async function withModelFallback<T extends object>(
+  call: (model: string) => Promise<T>,
+): Promise<T> {
+  const all = [config.model, ...config.fallbackModels.filter((slug) => slug !== config.model)]
+  const now = Date.now()
+  const ready = all.filter((slug) => (cooldownUntil.get(slug) ?? 0) <= now)
+  const candidates = ready.length > 0 ? ready : all
+
+  let lastError: unknown
+  for (const model of candidates) {
+    try {
+      const response = await call(model)
+      throwOnRouterError(response)
+      return response
+    } catch (error) {
+      if (!isFailoverError(error)) throw error
+      lastError = error
+      if ((error as { status?: number }).status === 429) cooldownUntil.set(model, Date.now() + COOLDOWN_MS)
+      const reason = error instanceof Error ? error.message : String(error)
+      console.warn(`[llm] ${model} failed (${reason}); ${model === candidates.at(-1) ? 'no more models' : 'trying next'}`)
+    }
+  }
+  throw lastError
 }
 
 /** Thrown when the model declines rather than answers. */
